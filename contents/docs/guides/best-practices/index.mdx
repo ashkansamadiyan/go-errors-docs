@@ -1,0 +1,338 @@
+---
+title: Best Practices
+description: Guidelines and best practices for using go-errors effectively
+---
+
+# Best Practices
+
+This guide outlines best practices and patterns for using go-errors effectively in your TypeScript projects.
+
+## Type Safety
+
+### Always Use Type Parameters
+
+```typescript
+// ❌ Bad: Implicit any types
+const [value, error] = go(() => someOperation());
+
+// ✅ Good: Explicit type parameters
+const [value, error] = go<number, ValidationError>(() => someOperation());
+```
+
+### Use Custom Error Types
+
+```typescript
+// ❌ Bad: Generic Error type
+const [value, error] = go(() => validate(input));
+
+// ✅ Good: Custom error type for better error handling
+class ValidationError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+const [value, error] = go<User, ValidationError>(() => validate(input));
+if (error) {
+  console.log(`Validation failed for field ${error.field}`);
+}
+```
+
+### Use `as const` for Type Inference
+
+```typescript
+// ❌ Bad: Type information might be lost
+return [value, null];
+
+// ✅ Good: Preserve literal types
+return [value, null] as const;
+```
+
+## Error Handling
+
+### Early Returns
+
+```typescript
+// ❌ Bad: Nested error handling
+async function processUser(id: string) {
+  const [user, userError] = await fetchUser(id);
+  if (!userError) {
+    const [posts, postsError] = await fetchPosts(user.id);
+    if (!postsError) {
+      return processData(user, posts);
+    }
+  }
+  return null;
+}
+
+// ✅ Good: Early returns
+async function processUser(id: string) {
+  const [user, userError] = await fetchUser(id);
+  if (userError) return [null, userError] as const;
+
+  const [posts, postsError] = await fetchPosts(user.id);
+  if (postsError) return [null, postsError] as const;
+
+  return processData(user, posts);
+}
+```
+
+### Error Context Preservation
+
+```typescript
+// ❌ Bad: Lost error context
+function processData(data: unknown) {
+  const [validated, error] = go(() => validate(data));
+  if (error) {
+    throw new Error("Processing failed");  // Original error context lost
+  }
+  return validated;
+}
+
+// ✅ Good: Preserve error context
+function processData(data: unknown) {
+  const [validated, error] = go(() => validate(data));
+  if (error) {
+    return [null, error] as const;  // Original error preserved
+  }
+  return [validated, null] as const;
+}
+```
+
+### Granular Error Types
+
+```typescript
+// ❌ Bad: Single generic error type
+class AppError extends Error {}
+
+// ✅ Good: Specific error types
+class ValidationError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+class DatabaseError extends Error {
+  constructor(public operation: string, message: string) {
+    super(message);
+    this.name = 'DatabaseError';
+  }
+}
+
+class NetworkError extends Error {
+  constructor(public url: string, message: string) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+```
+
+## Async Operations
+
+### Consistent Promise Handling
+
+```typescript
+// ❌ Bad: Mixing promise handling styles
+async function fetchData() {
+  try {
+    const response = await fetch('/api/data');
+    const [data, error] = go(() => response.json());
+    if (error) throw error;
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ✅ Good: Consistent go-errors style
+async function fetchData() {
+  const [response, fetchError] = await go(fetch('/api/data'));
+  if (fetchError) return [null, fetchError] as const;
+
+  const [data, parseError] = await go(response.json());
+  if (parseError) return [null, parseError] as const;
+
+  return [data, null] as const;
+}
+```
+
+### Chain Operations Safely
+
+```typescript
+// ❌ Bad: Complex error handling
+async function processUserData(userId: string) {
+  try {
+    const user = await fetchUser(userId);
+    const posts = await fetchPosts(user.id);
+    const processed = await processData(user, posts);
+    return processed;
+  } catch (e) {
+    return null;
+  }
+}
+
+// ✅ Good: Clear error handling chain
+async function processUserData(userId: string) {
+  const [user, userError] = await go(fetchUser(userId));
+  if (userError) return [null, userError] as const;
+
+  const [posts, postsError] = await go(fetchPosts(user.id));
+  if (postsError) return [null, postsError] as const;
+
+  const [processed, processError] = await go(processData(user, posts));
+  if (processError) return [null, processError] as const;
+
+  return [processed, null] as const;
+}
+```
+
+## Code Organization
+
+### Separate Error Handling Logic
+
+```typescript
+// ❌ Bad: Mixed business and error handling logic
+function processPayment(amount: number) {
+  const [validated, validationError] = go(() => validateAmount(amount));
+  if (validationError) {
+    logError(validationError);
+    notifyAdmin(validationError);
+    return [null, validationError] as const;
+  }
+  
+  // More business logic...
+}
+
+// ✅ Good: Separated error handling
+function handlePaymentError(error: Error) {
+  logError(error);
+  notifyAdmin(error);
+  return [null, error] as const;
+}
+
+function processPayment(amount: number) {
+  const [validated, validationError] = go(() => validateAmount(amount));
+  if (validationError) return handlePaymentError(validationError);
+  
+  // Business logic only...
+}
+```
+
+### Reusable Error Handling Patterns
+
+```typescript
+// ✅ Good: Reusable retry pattern
+async function withRetry<T>(
+  operation: () => Promise<T>,
+  options: {
+    maxRetries?: number;
+    delay?: number;
+    onRetry?: (error: Error, attempt: number) => void;
+  } = {}
+): Promise<[T, Error | null]> {
+  const { maxRetries = 3, delay = 1000, onRetry } = options;
+  let lastError: Error | null = null;
+
+  for (let i = 0; i < maxRetries; i++) {
+    const [result, error] = await go(operation());
+    if (!error) return [result, null];
+    
+    lastError = error;
+    if (onRetry) onRetry(error, i + 1);
+    
+    if (i < maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  return [null, lastError] as const;
+}
+
+// Usage
+const [data, error] = await withRetry(
+  () => fetchData(),
+  {
+    maxRetries: 5,
+    delay: 2000,
+    onRetry: (error, attempt) => {
+      console.log(`Retry ${attempt} failed:`, error.message);
+    }
+  }
+);
+```
+
+### Error Logging and Monitoring
+
+```typescript
+// ✅ Good: Structured error logging
+interface ErrorLog {
+  error: Error;
+  context: Record<string, unknown>;
+  timestamp: Date;
+  severity: 'low' | 'medium' | 'high';
+}
+
+function logError(error: Error, context: Record<string, unknown> = {}) {
+  const log: ErrorLog = {
+    error,
+    context,
+    timestamp: new Date(),
+    severity: error instanceof ValidationError ? 'low' : 'high'
+  };
+  
+  // Log to monitoring system
+  console.error(JSON.stringify(log, null, 2));
+}
+
+// Usage in error handling
+function processOrder(order: Order) {
+  const [validated, error] = go(() => validateOrder(order));
+  if (error) {
+    logError(error, { orderId: order.id });
+    return [null, error] as const;
+  }
+  return [validated, null] as const;
+}
+```
+
+## Testing
+
+### Test Both Success and Error Cases
+
+```typescript
+// ✅ Good: Comprehensive testing
+describe('processOrder', () => {
+  it('should process valid orders successfully', async () => {
+    const order = createValidOrder();
+    const [result, error] = await processOrder(order);
+    
+    expect(error).toBeNull();
+    expect(result).toBeDefined();
+  });
+
+  it('should handle validation errors', async () => {
+    const order = createInvalidOrder();
+    const [result, error] = await processOrder(order);
+    
+    expect(result).toBeNull();
+    expect(error).toBeInstanceOf(ValidationError);
+  });
+
+  it('should preserve error context', async () => {
+    const order = createInvalidOrder();
+    const [result, error] = await processOrder(order);
+    
+    expect(error).toHaveProperty('field');
+    expect(error?.message).toContain('validation failed');
+  });
+});
+```
+
+## See Also
+
+- [Core Concepts](/docs/getting-started/core-concepts)
+- [API Reference](/docs/api-reference)
+- [Examples](/docs/examples)
+- [Advanced Patterns](/docs/guides/advanced-patterns) 

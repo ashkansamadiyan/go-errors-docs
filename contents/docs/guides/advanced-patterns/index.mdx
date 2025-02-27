@@ -1,0 +1,358 @@
+---
+title: Advanced Patterns
+description: Advanced patterns and techniques for using go-errors
+---
+
+# Advanced Patterns
+
+This guide covers advanced patterns and techniques for using go-errors in complex scenarios.
+
+## Result Transformations
+
+### Result Mapping
+
+```typescript
+// Helper function to map Result values
+function mapResult<T, U, E>(
+  result: [T, null] | [null, E],
+  fn: (value: T) => U
+): [U, null] | [null, E] {
+  const [value, error] = result;
+  if (error) return [null, error];
+  return [fn(value), null];
+}
+
+// Usage
+const [num, error] = go(() => "42");
+const [parsed, parseError] = mapResult(
+  [num, error],
+  value => parseInt(value, 10)
+);
+```
+
+### Result Chaining
+
+```typescript
+// Helper function to chain Results
+function chainResult<T, U, E>(
+  result: [T, null] | [null, E],
+  fn: (value: T) => [U, null] | [null, E]
+): [U, null] | [null, E] {
+  const [value, error] = result;
+  if (error) return [null, error];
+  return fn(value);
+}
+
+// Usage
+interface User {
+  id: number;
+  name: string;
+}
+
+async function fetchUserById(id: number): Promise<[User, null] | [null, Error]> {
+  const [response, error] = await go(fetch(`/api/users/${id}`));
+  if (error) return [null, error];
+  
+  return go(response.json());
+}
+
+async function getUserPosts(user: User): Promise<[Post[], null] | [null, Error]> {
+  return go(fetch(`/api/users/${user.id}/posts`).then(r => r.json()));
+}
+
+// Chain operations
+const [user, userError] = await fetchUserById(123);
+const [posts, postsError] = await chainResult(
+  [user, userError],
+  getUserPosts
+);
+```
+
+## Composite Error Handling
+
+### Aggregate Errors
+
+```typescript
+class AggregateError extends Error {
+  constructor(public errors: Error[]) {
+    super(`Multiple errors occurred (${errors.length})`);
+    this.name = 'AggregateError';
+  }
+}
+
+// Helper to process multiple operations
+async function processAll<T, E = Error>(
+  operations: (() => Promise<T>)[]
+): Promise<[T[], null] | [null, AggregateError]> {
+  const results = await Promise.all(
+    operations.map(op => go(op()))
+  );
+  
+  const errors = results
+    .map(([_, error]) => error)
+    .filter((error): error is E => error !== null);
+  
+  if (errors.length > 0) {
+    return [null, new AggregateError(errors)];
+  }
+  
+  const values = results
+    .map(([value]) => value)
+    .filter((value): value is T => value !== null);
+  
+  return [values, null];
+}
+
+// Usage
+const [results, error] = await processAll([
+  () => fetchUser(1),
+  () => fetchUser(2),
+  () => fetchUser(3)
+]);
+
+if (error) {
+  console.log(`${error.errors.length} operations failed`);
+  error.errors.forEach(e => console.error(e));
+}
+```
+
+### Error Recovery
+
+```typescript
+// Helper for fallback values
+function withFallback<T, E>(
+  operation: () => T,
+  fallback: T
+): [T, null] {
+  const [value, error] = go(operation);
+  if (error) return [fallback, null];
+  return [value, null];
+}
+
+// Helper for recovery functions
+async function withRecovery<T, E>(
+  operation: () => Promise<T>,
+  recover: (error: E) => Promise<T>
+): Promise<[T, null] | [null, E]> {
+  const [value, error] = await go(operation());
+  if (error) {
+    const [recovered, recoverError] = await go(recover(error));
+    if (recoverError) return [null, recoverError];
+    return [recovered, null];
+  }
+  return [value, null];
+}
+
+// Usage
+const [config, configError] = await withRecovery(
+  () => fetchConfig(),
+  async (error) => {
+    console.log("Using cached config due to error:", error);
+    return getCachedConfig();
+  }
+);
+```
+
+## Context Preservation
+
+### Error Context Chain
+
+```typescript
+class ContextualError extends Error {
+  constructor(
+    message: string,
+    public context: Record<string, unknown>,
+    public cause?: Error
+  ) {
+    super(message);
+    this.name = 'ContextualError';
+  }
+}
+
+function addErrorContext<T, E extends Error>(
+  result: [T, null] | [null, E],
+  context: Record<string, unknown>
+): [T, null] | [null, ContextualError] {
+  const [value, error] = result;
+  if (error) {
+    return [null, new ContextualError(
+      error.message,
+      context,
+      error
+    )];
+  }
+  return [value, null];
+}
+
+// Usage
+async function processOrder(orderId: string) {
+  const [order, orderError] = await go(fetchOrder(orderId));
+  if (orderError) {
+    return addErrorContext(
+      [null, orderError],
+      { orderId, operation: 'fetchOrder' }
+    );
+  }
+
+  const [processed, processError] = await go(processOrderItems(order));
+  if (processError) {
+    return addErrorContext(
+      [null, processError],
+      { orderId, items: order.items.length }
+    );
+  }
+
+  return [processed, null] as const;
+}
+```
+
+## Resource Management
+
+### Automatic Cleanup
+
+```typescript
+interface Disposable {
+  dispose(): void | Promise<void>;
+}
+
+async function using<T extends Disposable, R>(
+  resource: T,
+  fn: (resource: T) => Promise<R>
+): Promise<[R, null] | [null, Error]> {
+  try {
+    const [result, error] = await go(fn(resource));
+    await go(resource.dispose());
+    return [result, error];
+  } catch (e) {
+    await go(resource.dispose());
+    return [null, e as Error];
+  }
+}
+
+// Usage
+class DatabaseConnection implements Disposable {
+  async dispose() {
+    // Cleanup connection
+  }
+  
+  async query(sql: string) {
+    // Run query
+  }
+}
+
+const [results, error] = await using(
+  new DatabaseConnection(),
+  async (db) => {
+    const [rows] = await go(db.query("SELECT * FROM users"));
+    return rows;
+  }
+);
+```
+
+## Async Patterns
+
+### Parallel Processing with Limits
+
+```typescript
+async function processWithLimit<T, R>(
+  items: T[],
+  operation: (item: T) => Promise<R>,
+  limit: number
+): Promise<[R[], null] | [null, AggregateError]> {
+  const results: (R | Error)[] = [];
+  const errors: Error[] = [];
+  
+  // Process in batches
+  for (let i = 0; i < items.length; i += limit) {
+    const batch = items.slice(i, i + limit);
+    const batchResults = await Promise.all(
+      batch.map(async item => {
+        const [result, error] = await go(operation(item));
+        if (error) {
+          errors.push(error);
+          return error;
+        }
+        return result;
+      })
+    );
+    results.push(...batchResults);
+  }
+  
+  if (errors.length > 0) {
+    return [null, new AggregateError(errors)];
+  }
+  
+  return [results.filter((r): r is R => !(r instanceof Error)), null];
+}
+
+// Usage
+const [processed, error] = await processWithLimit(
+  userIds,
+  async (id) => {
+    const [user] = await go(fetchUser(id));
+    return user;
+  },
+  5 // Process 5 at a time
+);
+```
+
+### Timeout Pattern
+
+```typescript
+function withTimeout<T>(
+  operation: () => Promise<T>,
+  ms: number
+): Promise<[T, null] | [null, Error]> {
+  return go(Promise.race([
+    operation(),
+    new Promise<T>((_, reject) => 
+      setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms)
+    )
+  ]));
+}
+
+// Usage
+const [result, error] = await withTimeout(
+  () => fetchLargeDataset(),
+  5000 // 5 second timeout
+);
+```
+
+## Testing Patterns
+
+### Error Simulation
+
+```typescript
+// Error generator for testing
+function createErrorGenerator<E extends Error>(
+  ErrorClass: new (...args: any[]) => E,
+  probability: number
+) {
+  return function <T>(value: T): [T, null] | [null, E] {
+    if (Math.random() < probability) {
+      return [null, new ErrorClass("Simulated error")];
+    }
+    return [value, null];
+  };
+}
+
+// Usage in tests
+describe('error handling', () => {
+  it('should handle network errors', async () => {
+    const failingFetch = createErrorGenerator(NetworkError, 1.0);
+    
+    const [data, error] = await go(failingFetch(
+      fetch('https://api.example.com')
+    ));
+    
+    expect(error).toBeInstanceOf(NetworkError);
+  });
+});
+```
+
+## See Also
+
+- [Best Practices](/docs/guides/best-practices)
+- [API Reference](/docs/api-reference)
+- [Examples](/docs/examples)
+- [Core Concepts](/docs/getting-started/core-concepts) 

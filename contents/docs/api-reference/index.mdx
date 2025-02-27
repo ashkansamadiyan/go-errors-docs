@@ -1,0 +1,212 @@
+---
+title: API Reference
+description: Complete API documentation for go-errors
+---
+
+# API Reference
+
+This page provides detailed documentation for all the functions and types exported by go-errors.
+
+## Core Functions
+
+### `go`
+
+The main function that handles both synchronous and asynchronous operations.
+
+```typescript
+function go<T, E = Error>(fn: () => T): Result<T, E>;
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+```
+
+**Type Parameters:**
+- `T` - The type of the successful value
+- `E` - The type of the error (defaults to `Error`)
+
+**Parameters:**
+- `fn` - A synchronous function that might throw
+- `promise` - A Promise that might reject
+
+**Returns:**
+- For synchronous operations: `Result<T, E>`
+- For asynchronous operations: `Promise<Result<T, E>>`
+
+**Example:**
+```typescript
+// Synchronous usage
+const [value, error] = go(() => {
+  if (someCondition) throw new Error("failed");
+  return 42;
+});
+
+// Asynchronous usage
+const [data, error] = await go(fetch("https://api.example.com/data"));
+
+// With custom error types
+const [value, error] = go<number, CustomError>(() => validate(input));
+```
+
+### `goSync`
+
+Specifically handles synchronous operations.
+
+```typescript
+function goSync<T, E = Error>(fn: () => T): Result<T, E>
+```
+
+**Type Parameters:**
+- `T` - The type of the successful value
+- `E` - The type of the error (defaults to `Error`)
+
+**Parameters:**
+- `fn` - A synchronous function that might throw
+
+**Returns:**
+- `Result<T, E>` - A tuple containing either the value or an error
+
+**Example:**
+```typescript
+// Basic usage
+const [value, error] = goSync(() => {
+  if (x < 0) throw new Error("negative");
+  return x * 2;
+});
+
+// With custom error type
+const [value, error] = goSync<number, ValidationError>(() => validate(input));
+```
+
+### `goAsync`
+
+Specifically handles asynchronous operations.
+
+```typescript
+function goAsync<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>
+```
+
+**Type Parameters:**
+- `T` - The type of the successful value
+- `E` - The type of the error (defaults to `Error`)
+
+**Parameters:**
+- `promise` - A Promise that might reject
+
+**Returns:**
+- `Promise<Result<T, E>>` - A Promise that resolves to a tuple containing either the value or an error
+
+**Example:**
+```typescript
+// Basic usage
+const [data, error] = await goAsync(fetch("https://api.example.com/data"));
+
+// With custom error type
+const [user, error] = await goAsync<User, ApiError>(api.getUser(123));
+```
+
+## Types
+
+### `Result<T, E>`
+
+The core type representing a Go-style result tuple.
+
+```typescript
+type Result<T, E = Error> = [T, null] | [null, E];
+```
+
+**Type Parameters:**
+- `T` - The type of the successful value
+- `E` - The type of the error (defaults to `Error`)
+
+This type represents either:
+- A success case: `[value, null]`
+- An error case: `[null, error]`
+
+**Example:**
+```typescript
+// Success case
+const success: Result<number> = [42, null];
+
+// Error case
+const error: Result<number> = [null, new Error("failed")];
+
+// With custom error type
+type ValidationError = { code: number; message: string };
+const result: Result<string, ValidationError> = [null, { 
+  code: 400, 
+  message: "Invalid input" 
+}];
+```
+
+## Error Handling
+
+### Error Normalization
+
+go-errors automatically normalizes thrown values into proper Error objects:
+
+```typescript
+// String errors are converted to Error objects
+const [_, error1] = go(() => { throw "something went wrong"; });
+console.log(error1 instanceof Error); // true
+console.log(error1.message); // "something went wrong"
+
+// Objects are preserved but wrapped if not Error instances
+const [_, error2] = go(() => { 
+  throw { code: 404, message: "Not found" }; 
+});
+console.log(error2 instanceof Error); // true
+console.log(error2.code); // 404
+console.log(error2.message); // "Not found"
+```
+
+### Type Safety
+
+The Result type ensures type safety through TypeScript:
+
+```typescript
+function processResult<T, E>(result: Result<T, E>): T {
+  const [value, error] = result;
+  if (error) {
+    // TypeScript knows:
+    // - value is null
+    // - error is E
+    throw error;
+  }
+  // TypeScript knows:
+  // - value is T
+  // - error is null
+  return value;
+}
+```
+
+## Best Practices
+
+1. Always specify error types for better type safety:
+```typescript
+const [value, error] = go<number, ValidationError>(() => validate(input));
+```
+
+2. Use early returns with error checking:
+```typescript
+const [data, error] = await fetchData();
+if (error) return [null, error] as const;
+```
+
+3. Propagate errors up the call stack:
+```typescript
+function processData() {
+  const [data, error] = getData();
+  if (error) return [null, error] as const;
+  // process data
+}
+```
+
+4. Use type assertions with `as const` for proper type inference:
+```typescript
+return [value, null] as const; // Better than just [value, null]
+```
+
+## See Also
+
+- [Core Concepts](/docs/getting-started/core-concepts)
+- [Examples](/docs/examples)
+- [Best Practices](/docs/guides/best-practices)
+- [Advanced Patterns](/docs/guides/advanced-patterns) 

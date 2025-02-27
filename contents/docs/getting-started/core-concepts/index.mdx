@@ -1,0 +1,163 @@
+---
+title: Core Concepts
+description: Understanding the fundamental concepts of go-errors
+---
+
+# Core Concepts
+
+go-errors is built around several core concepts that make error handling in TypeScript more predictable and type-safe. Let's explore these concepts in detail.
+
+## The Result Type
+
+The foundation of go-errors is the `Result` type:
+
+```typescript
+type Result<T, E = Error> = [T, null] | [null, E];
+```
+
+This type represents either a successful result with a value of type `T`, or an error of type `E`. The key characteristics are:
+
+- It's a tuple type with exactly two elements
+- One element is always `null`
+- The other element is either the value or the error
+- The error type defaults to `Error` but can be customized
+
+## The `go` Function
+
+The main function in go-errors is the `go` function, which has two overloads:
+
+```typescript
+function go<T, E = Error>(fn: () => T): Result<T, E>;
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+```
+
+Key points about the `go` function:
+
+1. It handles both synchronous and asynchronous operations
+2. It automatically catches any thrown errors
+3. It returns a `Result` type (or Promise of Result for async operations)
+4. It preserves type information for both success and error cases
+
+## Error Handling Pattern
+
+The go-errors pattern follows these principles:
+
+1. **Explicit Error Checking**: Errors must be explicitly checked before accessing values
+2. **Type Safety**: TypeScript ensures you handle both success and error cases
+3. **No Exception Throwing**: Errors are returned as values, not thrown
+4. **Composition**: Error handling can be composed through function chains
+
+Example of the pattern:
+
+```typescript
+// Basic pattern
+const [value, error] = go(() => someOperation());
+if (error) {
+  // Handle error case
+  return [null, error] as const;
+}
+// Use value safely here
+
+// Composition pattern
+function processData() {
+  const [data, error1] = go(() => fetchData());
+  if (error1) return [null, error1] as const;
+
+  const [processed, error2] = go(() => processStep(data));
+  if (error2) return [null, error2] as const;
+
+  return [processed, null] as const;
+}
+```
+
+## Type Safety
+
+go-errors leverages TypeScript's type system to ensure type safety:
+
+```typescript
+// Generic type parameters
+const [value, error] = go<string, ValidationError>(() => {
+  // TypeScript knows:
+  // - value is string | null
+  // - error is ValidationError | null
+  // - exactly one of them is null
+  return "hello";
+});
+
+// Type narrowing
+if (error) {
+  // TypeScript knows:
+  // - value is null
+  // - error is ValidationError
+} else {
+  // TypeScript knows:
+  // - value is string
+  // - error is null
+}
+```
+
+## Async Operations
+
+Async operations work similarly to sync ones, but return a Promise of Result:
+
+```typescript
+// Async pattern
+const [data, error] = await go(fetchData());
+if (error) {
+  // Handle error
+  return [null, error] as const;
+}
+// Use data safely
+
+// Chaining async operations
+async function processUser(id: string) {
+  const [user, userError] = await go(fetchUser(id));
+  if (userError) return [null, userError] as const;
+
+  const [posts, postsError] = await go(fetchUserPosts(user.id));
+  if (postsError) return [null, postsError] as const;
+
+  return [{
+    user,
+    posts
+  }, null] as const;
+}
+```
+
+## Error Propagation
+
+Error propagation in go-errors is explicit and type-safe:
+
+```typescript
+type Result<T, E> = [T, null] | [null, E];
+
+function step1(): Result<string, Error> {
+  const [value, error] = go(() => "step1");
+  if (error) return [null, error];
+  return [value, null];
+}
+
+function step2(input: string): Result<number, Error> {
+  const [value, error] = go(() => input.length);
+  if (error) return [null, error];
+  return [value, null];
+}
+
+function process(): Result<number, Error> {
+  const [step1Result, step1Error] = step1();
+  if (step1Error) return [null, step1Error];
+
+  const [step2Result, step2Error] = step2(step1Result);
+  if (step2Error) return [null, step2Error];
+
+  return [step2Result, null];
+}
+```
+
+## Next Steps
+
+Now that you understand the core concepts, you can:
+- Explore the [API Reference](/docs/api-reference) for detailed documentation
+- Check out [Examples](/docs/examples) for real-world usage
+- Learn about [Best Practices](/docs/guides/best-practices)
+- See [Advanced Patterns](/docs/guides/advanced-patterns) for more complex scenarios 
