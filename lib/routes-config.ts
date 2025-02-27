@@ -42,6 +42,14 @@ export const ROUTES: EachRoute[] = [
       { title: "Best Practices", href: "/best-practices" },
       { title: "Advanced Patterns", href: "/advanced-patterns" }
     ]
+  },
+  {
+    title: "Blog",
+    href: "/blog",
+    items: [
+      { title: "Why Go-Style Error Handling", href: "/why-go-style-error-handling" },
+      { title: "Cleaner Code with Early Returns", href: "/cleaner-code-with-early-returns" }
+    ]
   }
 ];
 

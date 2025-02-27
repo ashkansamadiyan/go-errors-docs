@@ -14,6 +14,10 @@ const nextConfig = {
         protocol: 'https',
         hostname: 'img.shields.io',
       },
+      {
+        protocol: 'https',
+        hostname: 'img.freepik.com',
+      }
     ],
   },
 }

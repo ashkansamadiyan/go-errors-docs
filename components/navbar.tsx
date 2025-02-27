@@ -6,7 +6,6 @@ import Anchor from "./anchor";
 import { SheetLeftbar } from "./leftbar";
 import { page_routes } from "@/lib/routes-config";
 import { SheetClose } from "@/components/ui/sheet";
-import AlgoliaSearch from "./algolia-search";
 
 export const NAVLINKS = [
   {
@@ -25,13 +24,11 @@ export const NAVLINKS = [
     title: "Guides",
     href: "/docs/guides/best-practices",
   },
+  {
+    title: "Blog",
+    href: "/blog",
+  },
 ];
-
-const algolia_props = {
-  appId: process.env.ALGOLIA_APP_ID!,
-  indexName: process.env.ALGOLIA_INDEX!,
-  apiKey: process.env.ALGOLIA_SEARCH_API_KEY!,
-};
 
 export function Navbar() {
   return (
@@ -49,23 +46,18 @@ export function Navbar() {
           </div>
         </div>
 
-        <div className="flex items-center sm:justify-normal justify-between sm:gap-3 ml-1 sm:w-fit w-[90%]">
-          <AlgoliaSearch {...algolia_props} />
-          <div className="flex items-center justify-between sm:gap-2">
-            <div className="flex ml-4 sm:ml-0">
-              <Link
-                href="https://github.com/ashkansamadiyan/go-style-errors"
-                target="_blank"
-                className={buttonVariants({
-                  variant: "ghost",
-                  size: "icon",
-                })}
-              >
-                <GithubIcon className="h-[1.1rem] w-[1.1rem]" />
-              </Link>
-              <ModeToggle />
-            </div>
-          </div>
+        <div className="flex items-center justify-end gap-2">
+          <Link
+            href="https://github.com/ashkansamadiyan/go-style-errors"
+            target="_blank"
+            className={buttonVariants({
+              variant: "ghost",
+              size: "icon",
+            })}
+          >
+            <GithubIcon className="h-[1.1rem] w-[1.1rem]" />
+          </Link>
+          <ModeToggle />
         </div>
       </div>
     </nav>

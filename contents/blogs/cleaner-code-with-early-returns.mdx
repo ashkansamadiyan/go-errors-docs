@@ -1,0 +1,250 @@
+---
+title: "Cleaner Code with Early Returns in TypeScript"
+description: "How to write cleaner, more maintainable code using early returns and go-errors"
+date: "2024-03-21"
+cover: "/blog/clean-code.png"
+authors:
+  - username: "ashkansamadiyan"
+    handle: "@ashkansamadiyan"
+    handleUrl: "https://github.com/ashkansamadiyan"
+    avatar: "https://github.com/ashkansamadiyan.png"
+---
+
+# Cleaner Code with Early Returns in TypeScript
+
+Have you ever found yourself lost in a maze of nested if statements, trying to follow the logic of a function? You're not alone. As codebases grow, deeply nested conditions become one of the biggest enemies of code readability and maintainability. This is where the power of early returns comes in, and when combined with `go-errors`, it becomes an even more powerful pattern for writing clean, maintainable code.
+
+## The Pyramid of Doom: A Common Anti-Pattern
+
+We've all written code like this at some point. It starts innocently enough with a simple validation, but as requirements grow, the nesting gets deeper and deeper:
+
+```typescript
+function processPayment(data: unknown) {
+  if (data && typeof data === 'object') {
+    if ('amount' in data && typeof data.amount === 'number') {
+      if (data.amount > 0) {
+        if ('currency' in data && typeof data.currency === 'string') {
+          if (['USD', 'EUR'].includes(data.currency)) {
+            return chargePayment(data.amount, data.currency);
+          } else {
+            throw new Error('Invalid currency');
+          }
+        } else {
+          throw new Error('Missing currency');
+        }
+      } else {
+        throw new Error('Amount must be positive');
+      }
+    } else {
+      throw new Error('Invalid amount');
+    }
+  } else {
+    throw new Error('Invalid data');
+  }
+}
+```
+
+This is what we call the "Pyramid of Doom" - a pattern that's unfortunately common in many codebases. Each level of nesting makes the code:
+- Harder to read and understand
+- More difficult to modify
+- Prone to bugs
+- Challenging to test
+- A nightmare to maintain
+
+I once spent hours debugging an issue in a similar function, only to realize that a condition was nested at the wrong level. The deeper the nesting, the easier it is to make such mistakes.
+
+## The Early Returns Revolution
+
+Enter early returns - a pattern that flips this approach on its head. Instead of nesting conditions deeper and deeper, we validate and return early when something's wrong. When combined with `go-errors`, this creates a powerful and elegant solution:
+
+```typescript
+import { go } from 'go-errors';
+
+function processPayment(data: unknown) {
+  // Validate structure
+  if (!data || typeof data !== 'object') {
+    return [null, new ValidationError('Invalid data')] as const;
+  }
+
+  // Validate amount
+  if (!('amount' in data) || typeof data.amount !== 'number') {
+    return [null, new ValidationError('Invalid amount')] as const;
+  }
+  if (data.amount <= 0) {
+    return [null, new ValidationError('Amount must be positive')] as const;
+  }
+
+  // Validate currency
+  if (!('currency' in data) || typeof data.currency !== 'string') {
+    return [null, new ValidationError('Missing currency')] as const;
+  }
+  if (!['USD', 'EUR'].includes(data.currency)) {
+    return [null, new ValidationError('Invalid currency')] as const;
+  }
+
+  // Process payment
+  return go(() => chargePayment(data.amount, data.currency));
+}
+```
+
+Look at how much clearer this is! Each validation is a single level, with a clear purpose and immediate return if something's wrong. This transformation makes the code:
+- Easy to read from top to bottom
+- Simple to modify or add new validations
+- Clear about what's being checked
+- Self-documenting
+
+## Real-World Success Stories
+
+Let me share a real-world example that transformed our team's approach to validation. We had an API endpoint handling user registration that was becoming increasingly complex. New requirements kept adding more validation rules, and our nested approach was becoming unsustainable.
+
+Here's how we applied early returns to handle API requests:
+
+```typescript
+async function handleRequest(req: unknown) {
+  // Validate request
+  const [body, parseError] = go(() => JSON.parse(req as string));
+  if (parseError) {
+    return [null, new ApiError(400, 'Invalid JSON')] as const;
+  }
+
+  // Validate auth
+  const [token, authError] = await go(validateAuth(body));
+  if (authError) {
+    return [null, new ApiError(401, 'Unauthorized')] as const;
+  }
+
+  // Process request
+  return processRequest(body, token);
+}
+```
+
+The impact was immediate:
+1. Bug reports related to validation dropped significantly
+2. New team members could understand the code faster
+3. Adding new validation rules became trivial
+4. Testing became more straightforward
+
+## The Art of Validation
+
+One of the most common use cases for early returns is form validation. Here's a pattern that has served us well:
+
+```typescript
+function validateForm(input: unknown) {
+  // Check structure
+  if (!input || typeof input !== 'object') {
+    return [null, new FormError('Invalid input')] as const;
+  }
+
+  // Check email
+  const email = (input as any).email;
+  if (!email || !email.includes('@')) {
+    return [null, new FormError('Invalid email')] as const;
+  }
+
+  // Success case
+  return [{ email }, null] as const;
+}
+```
+
+This pattern has become our standard approach because it:
+- Makes validation rules explicit
+- Keeps error messages close to their checks
+- Makes it easy to add new validations
+- Provides clear feedback for users
+
+## Lessons from the Trenches
+
+Through implementing this pattern across multiple projects, we've developed some best practices that have proven invaluable:
+
+### 1. Clear Validation Order
+
+Order your validations logically, from basic to complex:
+
+```typescript
+async function createUser(input: unknown) {
+  // 1. Structure validation
+  if (!isValidUserData(input)) {
+    return [null, new ValidationError('Invalid data')] as const;
+  }
+
+  // 2. Business rules
+  const [exists] = await go(checkUserExists(input.email));
+  if (exists) {
+    return [null, new ValidationError('User exists')] as const;
+  }
+
+  // 3. External operations
+  return go(saveUser(input));
+}
+```
+
+### 2. Descriptive Error Types
+
+Make your error types work for you:
+
+```typescript
+class ValidationError extends Error {
+  constructor(message: string, public field?: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validate(data: unknown) {
+  if (!data) {
+    return [null, new ValidationError('Missing data')] as const;
+  }
+  return [data, null] as const;
+}
+```
+
+### 3. Meaningful Error Context
+
+Always provide context with your errors:
+
+```typescript
+function processOrder(order: unknown) {
+  const [validated, error] = validateOrder(order);
+  if (error) {
+    return [null, new Error(
+      `Order validation failed: ${error.message}`
+    )] as const;
+  }
+  return [validated, null] as const;
+}
+```
+
+## The Impact on Development
+
+Adopting early returns with `go-errors` has had far-reaching benefits:
+
+1. **Better Readability**
+   - Code flows naturally from top to bottom
+   - Each validation stands alone
+   - Intent is clear at every step
+
+2. **Type Safety**
+   - TypeScript can better understand our code
+   - Error types are preserved
+   - Invalid states are impossible
+
+3. **Maintainability**
+   - Adding new validations is straightforward
+   - Removing old ones is safe
+   - Changes are localized
+
+## A Cultural Transformation
+
+The most surprising benefit wasn't technical - it was cultural. Our team's code reviews became more focused on business logic rather than untangling complex conditions. Junior developers could contribute with confidence, knowing the pattern would guide them toward clean, maintainable code.
+
+## Looking Forward
+
+Early returns with `go-errors` isn't just a pattern - it's a philosophy about how code should be structured. It encourages us to:
+1. Validate early
+2. Return immediately on errors
+3. Keep the success path clean
+4. Use descriptive error types
+
+The result? Code that's not just functional, but a joy to work with. Code that tells a story, that guides the reader through its logic naturally. Code that we can confidently modify, extend, and maintain.
+
+Try this pattern in your next project. Start small, perhaps with a single validation function. Watch how it transforms not just your code, but how you think about structuring your applications. Share your experiences with your team, and let's continue building more maintainable, more reliable software together. 
