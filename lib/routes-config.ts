@@ -23,15 +23,21 @@ export const ROUTES: EachRoute[] = [
   {
     title: "API Reference",
     href: "/api-reference",
+    noLink: true,
     items: [
-      { title: "API Reference", href: "/api-reference" }
+      { title: "Core Functions", href: "/core-functions" },
+      { title: "Types", href: "/types" },
+      { title: "Error Handling", href: "/error-handling" }
     ]
   },
   {
     title: "Examples",
     href: "/examples",
+    noLink: true,
     items: [
-      { title: "Examples", href: "/examples" }
+      { title: "Basic Usage", href: "/basic-usage" },
+      { title: "Error Propagation", href: "/error-propagation" },
+      { title: "Custom Error Types", href: "/custom-error-types" }
     ]
   },
   {

@@ -1,0 +1,90 @@
+---
+title: Error Handling
+description: Documentation for error handling features in go-errors
+---
+
+# Error Handling
+
+This page documents the error handling features in go-errors.
+
+## Error Normalization
+
+go-errors automatically normalizes thrown values into proper Error objects:
+
+```typescript
+// String errors are converted to Error objects
+const [_, error1] = go(() => { throw "something went wrong"; });
+console.log(error1 instanceof Error); // true
+console.log(error1.message); // "something went wrong"
+
+// Objects are preserved but wrapped if not Error instances
+const [_, error2] = go(() => { 
+  throw { code: 404, message: "Not found" }; 
+});
+console.log(error2 instanceof Error); // true
+console.log(error2.code); // 404
+console.log(error2.message); // "Not found"
+```
+
+## Error Propagation
+
+go-errors makes it easy to propagate errors up the call stack:
+
+```typescript
+function processData() {
+  const [data, error] = getData();
+  if (error) return [null, error] as const;
+  // process data
+}
+
+async function process() {
+  const [step1Result, step1Error] = processStep1();
+  if (step1Error) {
+    return [null, step1Error] as const;
+  }
+
+  const [step2Result, step2Error] = processStep2(step1Result);
+  if (step2Error) {
+    return [null, step2Error] as const;
+  }
+
+  return [step2Result, null] as const;
+}
+```
+
+## Best Practices
+
+1. Use early returns with error checking:
+```typescript
+const [data, error] = await fetchData();
+if (error) return [null, error] as const;
+```
+
+2. Always check for errors before using the result:
+```typescript
+const [user, error] = await getUser(id);
+if (error) {
+  // Handle error case first
+  return handleError(error);
+}
+// Now we can safely use the user object
+processUser(user);
+```
+
+3. Preserve error context when propagating:
+```typescript
+function validateUser(data: unknown) {
+  const [result, error] = validate(data);
+  if (error) {
+    // Add context to the error
+    return [null, new ValidationError("User validation failed", { cause: error })];
+  }
+  return [result, null];
+}
+```
+
+## See Also
+
+- [Core Functions](/docs/api-reference/core-functions)
+- [Types](/docs/api-reference/types)
+- [Examples](/docs/examples/basic-usage) 

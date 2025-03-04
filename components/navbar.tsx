@@ -14,11 +14,11 @@ export const NAVLINKS = [
   },
   {
     title: "Examples",
-    href: "/docs/examples",
+    href: "/docs/examples/basic-usage",
   },
   {
     title: "API Reference",
-    href: "/docs/api-reference",
+    href: "/docs/api-reference/core-functions",
   },
   {
     title: "Guides",

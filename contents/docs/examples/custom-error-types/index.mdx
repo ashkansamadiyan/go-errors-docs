@@ -1,0 +1,169 @@
+---
+title: Custom Error Types
+description: Examples of using custom error types with go-errors
+---
+
+# Custom Error Types
+
+This page demonstrates how to use custom error types with go-errors.
+
+## Basic Custom Errors
+
+```typescript
+import { go } from 'go-errors';
+
+// Define custom error types
+class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+class NetworkError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'NetworkError';
+  }
+}
+
+// Use custom error types
+function validateUser(user: unknown) {
+  const [result, error] = go<unknown, ValidationError>(() => {
+    if (!user || typeof user !== 'object') {
+      throw new ValidationError('Invalid user object');
+    }
+    return user;
+  });
+
+  return [result, error] as const;
+}
+
+async function fetchUser(id: string) {
+  const [response, error] = await go<Response, NetworkError>(
+    fetch(`/api/users/${id}`)
+  );
+
+  if (error) {
+    return [null, new NetworkError(`Failed to fetch user: ${error.message}`)] as const;
+  }
+
+  return [response, null] as const;
+}
+```
+
+## Error Type Hierarchies
+
+```typescript
+import { go } from 'go-errors';
+
+// Base error class
+class AppError extends Error {
+  constructor(message: string, public code: number) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+// Specific error types
+class DatabaseError extends AppError {
+  constructor(message: string) {
+    super(message, 500);
+    this.name = 'DatabaseError';
+  }
+}
+
+class AuthError extends AppError {
+  constructor(message: string) {
+    super(message, 401);
+    this.name = 'AuthError';
+  }
+}
+
+// Using error hierarchies
+async function getUserData(userId: string) {
+  // Check authentication
+  const [session, authError] = go<Session, AuthError>(() => checkAuth());
+  if (authError) {
+    return [null, authError] as const;
+  }
+
+  // Fetch user data
+  const [userData, dbError] = await go<UserData, DatabaseError>(
+    db.users.findById(userId)
+  );
+  if (dbError) {
+    return [null, dbError] as const;
+  }
+
+  return [userData, null] as const;
+}
+
+// Error handling
+async function handleRequest(userId: string) {
+  const [data, error] = await getUserData(userId);
+  
+  if (error) {
+    if (error instanceof AuthError) {
+      return { status: error.code, message: 'Authentication required' };
+    }
+    if (error instanceof DatabaseError) {
+      return { status: error.code, message: 'Internal server error' };
+    }
+    return { status: 500, message: 'Unknown error' };
+  }
+
+  return { status: 200, data };
+}
+```
+
+## Error with Additional Context
+
+```typescript
+import { go } from 'go-errors';
+
+interface ValidationContext {
+  field: string;
+  value: unknown;
+  constraint: string;
+}
+
+class ValidationError extends Error {
+  constructor(
+    message: string,
+    public context: ValidationContext
+  ) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validateField(field: string, value: unknown, constraint: string) {
+  const [result, error] = go(() => {
+    if (!isValid(value, constraint)) {
+      throw new ValidationError(
+        `Validation failed for ${field}`,
+        { field, value, constraint }
+      );
+    }
+    return value;
+  });
+
+  if (error instanceof ValidationError) {
+    console.error(
+      `Validation error: ${error.message}`,
+      `Field: ${error.context.field}`,
+      `Value: ${error.context.value}`,
+      `Constraint: ${error.context.constraint}`
+    );
+  }
+
+  return [result, error] as const;
+}
+```
+
+## See Also
+
+- [Basic Usage](/docs/examples/basic-usage)
+- [Error Propagation](/docs/examples/error-propagation)
+- [Error Handling](/docs/api-reference/error-handling) 

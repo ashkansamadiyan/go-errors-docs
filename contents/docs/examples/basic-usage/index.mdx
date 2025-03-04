@@ -1,0 +1,100 @@
+---
+title: Basic Usage
+description: Basic examples of using go-errors
+---
+
+# Basic Usage
+
+This page provides basic examples of using go-errors in common scenarios.
+
+## Simple Error Handling
+
+```typescript
+import { go } from 'go-errors';
+
+function divide(a: number, b: number) {
+  const [result, error] = go(() => {
+    if (b === 0) throw new Error('Division by zero');
+    return a / b;
+  });
+
+  if (error) {
+    console.error('Division failed:', error.message);
+    return null;
+  }
+
+  return result;
+}
+
+// Usage
+console.log(divide(10, 2));  // Output: 5
+console.log(divide(10, 0));  // Output: null (with error logged)
+```
+
+## Async Operations
+
+```typescript
+import { go } from 'go-errors';
+
+async function fetchUserData(userId: string) {
+  const [response, fetchError] = await go(
+    fetch(`https://api.example.com/users/${userId}`)
+  );
+  
+  if (fetchError) {
+    console.error('Failed to fetch user:', fetchError.message);
+    return null;
+  }
+
+  const [data, parseError] = await go(response.json());
+  if (parseError) {
+    console.error('Failed to parse response:', parseError.message);
+    return null;
+  }
+
+  return data;
+}
+
+// Usage
+const userData = await fetchUserData('123');
+if (userData) {
+  console.log('User data:', userData);
+}
+```
+
+## Multiple Operations
+
+```typescript
+import { go } from 'go-errors';
+
+async function processUserData(userId: string) {
+  // Fetch user data
+  const [userData, userError] = await go(fetchUser(userId));
+  if (userError) {
+    console.error('Failed to fetch user:', userError.message);
+    return null;
+  }
+
+  // Validate user data
+  const [validatedData, validationError] = go(() => validateUser(userData));
+  if (validationError) {
+    console.error('Validation failed:', validationError.message);
+    return null;
+  }
+
+  // Save to database
+  const [savedUser, saveError] = await go(saveToDatabase(validatedData));
+  if (saveError) {
+    console.error('Failed to save user:', saveError.message);
+    return null;
+  }
+
+  return savedUser;
+}
+```
+
+## See Also
+
+- [Error Propagation](/docs/examples/error-propagation)
+- [Custom Error Types](/docs/examples/custom-error-types)
+- [API Reference](/docs/api-reference/core-functions) 

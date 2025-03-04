@@ -1,0 +1,125 @@
+---
+title: Error Propagation
+description: Examples of error propagation patterns in go-errors
+---
+
+# Error Propagation
+
+This page demonstrates various patterns for propagating errors in go-errors.
+
+## Basic Error Propagation
+
+```typescript
+import { go } from 'go-errors';
+
+function step1() {
+  const [result, error] = go(() => {
+    // Some operation that might fail
+    if (Math.random() < 0.5) throw new Error('Step 1 failed');
+    return 'Step 1 success';
+  });
+  
+  if (error) return [null, error] as const;
+  return [result, null] as const;
+}
+
+function step2(input: string) {
+  const [result, error] = go(() => {
+    // Another operation that might fail
+    if (Math.random() < 0.5) throw new Error('Step 2 failed');
+    return `${input} -> Step 2 success`;
+  });
+  
+  if (error) return [null, error] as const;
+  return [result, null] as const;
+}
+
+async function process() {
+  const [step1Result, step1Error] = step1();
+  if (step1Error) return [null, step1Error] as const;
+
+  const [step2Result, step2Error] = step2(step1Result);
+  if (step2Error) return [null, step2Error] as const;
+
+  return [step2Result, null] as const;
+}
+```
+
+## Error Context Preservation
+
+```typescript
+import { go } from 'go-errors';
+
+class ValidationError extends Error {
+  constructor(message: string, public field: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validateEmail(email: string) {
+  const [result, error] = go(() => {
+    if (!email.includes('@')) {
+      throw new ValidationError('Invalid email format', 'email');
+    }
+    return email;
+  });
+
+  if (error) {
+    // Add more context to the error
+    return [null, new Error(`Email validation failed: ${error.message}`, { cause: error })] as const;
+  }
+
+  return [result, null] as const;
+}
+
+function validateUser(user: { email: string }) {
+  const [email, error] = validateEmail(user.email);
+  if (error) {
+    // Propagate with additional context
+    return [null, new Error('User validation failed', { cause: error })] as const;
+  }
+
+  return [{ ...user, email }, null] as const;
+}
+```
+
+## Async Error Propagation
+
+```typescript
+import { go } from 'go-errors';
+
+async function fetchUserData(userId: string) {
+  const [response, fetchError] = await go(fetch(`/api/users/${userId}`));
+  if (fetchError) {
+    return [null, new Error('Failed to fetch user data', { cause: fetchError })] as const;
+  }
+
+  const [data, parseError] = await go(response.json());
+  if (parseError) {
+    return [null, new Error('Failed to parse user data', { cause: parseError })] as const;
+  }
+
+  return [data, null] as const;
+}
+
+async function processUserData(userId: string) {
+  const [userData, userError] = await fetchUserData(userId);
+  if (userError) {
+    return [null, new Error('User data processing failed', { cause: userError })] as const;
+  }
+
+  const [validatedData, validationError] = go(() => validateUserData(userData));
+  if (validationError) {
+    return [null, new Error('User data validation failed', { cause: validationError })] as const;
+  }
+
+  return [validatedData, null] as const;
+}
+```
+
+## See Also
+
+- [Basic Usage](/docs/examples/basic-usage)
+- [Custom Error Types](/docs/examples/custom-error-types)
+- [Error Handling](/docs/api-reference/error-handling) 

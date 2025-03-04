@@ -1,0 +1,78 @@
+---
+title: Types
+description: Documentation for the type system in go-errors
+---
+
+# Types
+
+This page documents the type system used in go-errors.
+
+## `Result<T, E>`
+
+The core type representing a Go-style result tuple.
+
+```typescript
+type Result<T, E = Error> = [T, null] | [null, E];
+```
+
+**Type Parameters:**
+- `T` - The type of the successful value
+- `E` - The type of the error (defaults to `Error`)
+
+This type represents either:
+- A success case: `[value, null]`
+- An error case: `[null, error]`
+
+**Example:**
+```typescript
+// Success case
+const success: Result<number> = [42, null];
+
+// Error case
+const error: Result<number> = [null, new Error("failed")];
+
+// With custom error type
+type ValidationError = { code: number; message: string };
+const result: Result<string, ValidationError> = [null, { 
+  code: 400, 
+  message: "Invalid input" 
+}];
+```
+
+## Type Safety
+
+The Result type ensures type safety through TypeScript:
+
+```typescript
+function processResult<T, E>(result: Result<T, E>): T {
+  const [value, error] = result;
+  if (error) {
+    // TypeScript knows:
+    // - value is null
+    // - error is E
+    throw error;
+  }
+  // TypeScript knows:
+  // - value is T
+  // - error is null
+  return value;
+}
+```
+
+## Best Practices
+
+1. Always specify error types for better type safety:
+```typescript
+const [value, error] = go<number, ValidationError>(() => validate(input));
+```
+
+2. Use type assertions with `as const` for proper type inference:
+```typescript
+return [value, null] as const; // Better than just [value, null]
+```
+
+## See Also
+
+- [Core Functions](/docs/api-reference/core-functions)
+- [Error Handling](/docs/api-reference/error-handling)
+- [Examples](/docs/examples/basic-usage) 
