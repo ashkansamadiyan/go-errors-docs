@@ -1,51 +1,36 @@
 ---
-title: Image and Link
-description: This section provides an overview of how AriaDocs handles links and images in Markdown.
+title: Links and Images
+description: This section provides an overview of how links and images are handled in Markdown.
 ---
 
-In AriaDocs, all links and images written in Markdown are automatically converted to their respective Next.js components. This allows for better optimization and performance in your application.
+# Links and Images
+
+In this documentation, all links and images written in Markdown are automatically converted to their respective Next.js components. This allows for better optimization and performance in your application.
 
 ## Links
 
-When you create a link in your Markdown, it is converted to the Next.js `Link` component. This enables client-side navigation and improves loading times. Here’s an example of how a Markdown link is transformed:
+Links are automatically converted to Next.js `Link` components when they are internal links, and to regular `a` tags when they are external links.
 
-### Markdown example
-
-```markdown 
-[Visit OpenAI](https://www.openai.com)
-```
-
-### Rendered Output
-
-The above Markdown is converted to:
-
-```jsx
-<Link href="https://www.openai.com" target="_blank" rel="noopener noreferrer">
-    Visit OpenAI
-</Link>
+```md
+[Internal Link](/docs/getting-started)
+[External Link](https://github.com/ashkansamadiyan/go-style-errors)
 ```
 
 ## Images
 
-Similarly, images in Markdown are transformed into the Next.js `Image` component. This allows for automatic image optimization, such as lazy loading and resizing, which enhances performance and user experience. Here’s an example:
+Images are automatically optimized using Next.js Image component:
 
-### Markdown
-
-```markdown
-![Alt text for the image](https://via.placeholder.com/150)
+```md
+![Alt Text](/path/to/image.png)
 ```
 
-### Output
+## Custom Components
 
-The above Markdown is converted to:
+You can also use custom components for more advanced use cases:
 
-```jsx
-<Image
-    src="https://via.placeholder.com/150"
-    alt="Alt text for the image"
-    width={800}
-    height={350}
-/>
+```tsx
+<CustomLink href="/docs/advanced">Advanced Guide</CustomLink>
+<CustomImage src="/example.png" alt="Example" />
 ```
 
 ## Benefits

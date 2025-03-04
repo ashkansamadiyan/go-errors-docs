@@ -1,9 +1,35 @@
 ---
-title: Stepper
-description: This section previews the stepper component.
+title: Stepper Component
+description: A component for displaying step-by-step instructions in documentation
 ---
 
-In this guide, we utilize a custom `Stepper` component, specifically designed for AriaDocs, which enables users to display step-by-step instructions directly within the markdown render. 
+# Stepper Component
+
+In this guide, we utilize a custom `Stepper` component which enables users to display step-by-step instructions directly within the markdown render.
+
+## Basic Usage
+
+<Stepper>
+<StepperItem title="Step 1: Install the Library">
+```bash
+bun add go-style-errors
+```
+</StepperItem>
+
+<StepperItem title="Step 2: Import the Library">
+```typescript
+import { go } from 'go-style-errors';
+```
+</StepperItem>
+
+<StepperItem title="Step 3: Use in Your Code">
+```typescript
+const [result, error] = go(() => {
+  // Your code here
+});
+```
+</StepperItem>
+</Stepper>
 
 ## Preview
 ##

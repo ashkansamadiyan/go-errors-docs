@@ -1,3 +1,45 @@
+# go-style-errors Documentation
+
+This is the documentation site for the go-style-errors library, which provides Go-style error handling for TypeScript/JavaScript.
+
+## Features
+
+- Clear and comprehensive documentation
+- Interactive examples
+- API reference
+- Best practices and guides
+- Built with Next.js and Tailwind CSS
+- Dark mode support
+- Responsive design
+- Search functionality
+- MDX support
+
+## Getting Started
+
+To run this documentation site locally:
+
+```bash
+# Clone the repository
+git clone https://github.com/ashkansamadiyan/go-style-errors-docs
+cd go-style-errors-docs
+
+# Install dependencies
+bun install
+
+# Start the development server
+bun dev
+```
+
+Visit `http://localhost:3000` to view the documentation.
+
+## Contributing
+
+We welcome contributions! Please feel free to submit a Pull Request.
+
+## License
+
+MIT License - see LICENSE file for details
+
 ## AriaDocs - Documentation Template
 
 This feature-packed documentation template, built with Next.js, offers a sleek and responsive design, perfect for all your project documentation needs.
