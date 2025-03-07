@@ -69,25 +69,33 @@ One of the most powerful aspects of this approach is how it preserves type infor
 Here's a real-world example:
 
 ```typescript
-class ApiError extends Error {
-  constructor(public code: number, message: string) {
-    super(message);
-    this.name = 'ApiError';
-  }
+interface ApiError {
+  code: number;
+  message: string;
+  details?: string;
 }
 
 async function fetchData() {
-  const [response, error] = await go<Response, ApiError>(
-    fetch('/api/data')
-  );
+  const [response, error] = await goFetch<User, ApiError>('/api/user/1', {
+    errorTransformer: (e) => ({
+      code: e instanceof Error ? 500 : 400,
+      message: e instanceof Error ? e.message : 'Unknown error',
+      details: e instanceof Error ? e.stack : undefined
+    })
+  });
+
   if (error) {
-    return [null, new ApiError(500, error.message)] as const;
+    console.error(`API Error ${error.code}: ${error.message}`);
+    return [null, error] as const;
   }
-  return [await response.json(), null] as const;
+
+  return [response, null] as const;
 }
 ```
 
 This pattern has transformed how our team handles errors. Instead of generic catch blocks, we have specific error types that carry meaningful information. When an error occurs, we know exactly what went wrong and have all the context we need to handle it appropriately.
+
+For a deep dive into type safety and error handling patterns, check out our [Type Safety Guide](/docs/guides/type-safety) and [Error Handling Guide](/docs/guides/error-handling).
 
 ## Real-World Impact
 
@@ -109,32 +117,34 @@ I recently worked on a project where we migrated from traditional try-catch bloc
 
 Through our experience with this pattern, we've developed some best practices that have served us well:
 
-1. **Always Check Errors**
+1. **Choose the Right Function**
 ```typescript
-// ❌ Bad: Ignoring error
-const [data] = await go(fetchData());
-
-// ✅ Good: Explicit error handling
-const [data, error] = await go(fetchData());
-if (error) handle(error);
+// ✅ Good: Using the appropriate function for each case
+const [parsed, parseError] = goSync(() => JSON.parse(jsonString));
+const [data, fetchError] = await goAsync(fetch('/api/data'));
+const [result, err] = await go(maybeAsyncOperation());
 ```
 
-2. **Add Meaningful Context**
+2. **Handle Edge Cases**
 ```typescript
-const [user, error] = await go(fetchUser(id));
-if (error) {
-  return [null, new Error(`Failed to fetch user ${id}: ${error.message}`)] as const;
-}
+// ✅ Good: Proper handling of special values
+const [result, err] = go(() => {
+  if (!input) throw new ValidationError('input', 'Input is required');
+  return processInput(input);
+});
 ```
 
-3. **Leverage Type Safety**
+3. **Transform Errors When Needed**
 ```typescript
-// Let TypeScript help you catch errors
-const [data, error] = await go<UserData, ApiError>(fetchUser());
-if (error) {
-  logger.error(`API Error ${error.code}: ${error.message}`);
-}
+const [data, error] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (e) => ({
+    code: e instanceof Error ? 'FETCH_ERROR' : 'UNKNOWN_ERROR',
+    message: e instanceof Error ? e.message : 'Unknown error occurred'
+  })
+});
 ```
+
+For more advanced patterns and edge cases, check out our [Edge Cases Guide](/docs/guides/edge-cases) and [Async Patterns Guide](/docs/guides/async-patterns).
 
 ## The Cultural Shift
 
@@ -156,6 +166,8 @@ The pattern is simple but powerful:
 2. Errors are values, not exceptions
 3. Error handling is explicit
 4. Type safety is preserved
+
+To learn more about the different functions available and when to use each one, check out our [Function Differences Guide](/docs/guides/function-differences).
 
 If you're tired of wrestling with try-catch blocks and losing type information, give `go-errors` a try. Your future self (and your team) will thank you.
 
