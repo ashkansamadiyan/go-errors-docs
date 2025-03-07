@@ -27,7 +27,8 @@ export const ROUTES: EachRoute[] = [
     items: [
       { title: "Core Functions", href: "/core-functions" },
       { title: "Types", href: "/types" },
-      { title: "Error Handling", href: "/error-handling" }
+      { title: "Error Handling", href: "/error-handling" },
+      { title: "goFetch", href: "/go-fetch" }
     ]
   },
   {
@@ -45,8 +46,44 @@ export const ROUTES: EachRoute[] = [
     href: "/guides",
     noLink: true,
     items: [
-      { title: "Best Practices", href: "/best-practices" },
-      { title: "Advanced Patterns", href: "/advanced-patterns" }
+      { 
+        title: "Basic Concepts",
+        href: "/basic-concepts",
+        noLink: true,
+        items: [
+          { title: "Basic Usage", href: "/basic-usage" },
+          { title: "HTTP Requests", href: "/http-requests" }
+        ]
+      },
+      {
+        title: "Advanced Topics",
+        href: "/advanced-topics",
+        noLink: true,
+        items: [
+          { title: "Advanced Features", href: "/advanced-features" },
+          { title: "Advanced Patterns", href: "/advanced-patterns" },
+          { title: "Best Practices", href: "/best-practices" }
+        ]
+      },
+      {
+        title: "Error Handling",
+        href: "/error-handling",
+        noLink: true,
+        items: [
+          { title: "Error Handling Patterns", href: "/error-handling" },
+          { title: "Edge Cases", href: "/edge-cases" },
+          { title: "Type Safety", href: "/type-safety" }
+        ]
+      },
+      {
+        title: "Async Programming",
+        href: "/async",
+        noLink: true,
+        items: [
+          { title: "Async Patterns", href: "/async-patterns" },
+          { title: "Function Differences", href: "/function-differences" }
+        ]
+      }
     ]
   },
   {

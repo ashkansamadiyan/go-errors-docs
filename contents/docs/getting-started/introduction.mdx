@@ -6,7 +6,7 @@ A lightweight, type-safe TypeScript library that brings Go-style error handling 
 
 - 🎯 **Type-safe**: Full TypeScript support with precise type inference
 - 🔄 **Unified API**: Same pattern for both sync and async operations
-- 🌐 **Fetch Support**: Built-in wrapper for fetch operations with transformers
+- 🌐 **Enhanced Fetch**: Built-in `goFetch` with powerful transformers and type safety
 - 🪶 **Lightweight**: Zero dependencies, minimal overhead
 - 🔒 **Immutable**: Results are readonly tuples
 - 🎨 **Flexible**: Support for custom error types
@@ -26,10 +26,10 @@ bun add go-errors
 Then, start using it in your code:
 
 ```typescript
-import { go } from 'go-errors';
+import { go, goFetch } from 'go-errors';
 
 // Synchronous usage
-let [value, err] = go(() => {
+let [value, err] = goSync(() => {
   if (Math.random() > 0.5) throw new Error('Bad luck!');
   return 42;
 });
@@ -40,8 +40,13 @@ if (err) {
   console.log('Got value:', value);
 }
 
-// Asynchronous usage
-let [data, err] = await go(fetch('https://api.example.com/data'));
+// Using goFetch for API calls
+let [data, err] = await goFetch<User>('/api/user', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
 
 if (err) {
   console.error('Failed to fetch:', err);
@@ -68,18 +73,39 @@ This means a function will always return either:
 
 ### Variable Declaration Style
 
-Following Go's convention, we recommend using `let` instead of `const` for result declarations:
+Following Go's convention, we use `let` instead of `const` for result declarations:
 
 ```typescript
 // ✅ Recommended: Using let
-let [value, err] = go(() => someOperation());
+let [value, err] = goSync(() => someOperation());
 if (err) return handleError(err);
 
-let [result, err] = go(() => anotherOperation());
+let [result, err] = goSync(() => anotherOperation());
 if (err) return handleError(err);
+
+// ❌ Not recommended: Using const
+const [data, error] = goSync(() => operation()); // Less idiomatic
 ```
 
 This allows you to reuse the error variable name (typically `err`) throughout your code, just like in Go.
+
+### Enhanced Fetch Support
+
+The library now includes a powerful `goFetch` function that provides type-safe API calls with built-in transformation capabilities:
+
+```typescript
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    id: data.id,
+    name: `${data.firstName} ${data.lastName}`
+  }),
+  errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
+});
+
+if (err?.code === 'API_RATE_LIMIT') {
+  // Handle specific error type
+}
+```
 
 ## Next Steps
 

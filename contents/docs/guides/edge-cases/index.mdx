@@ -1,5 +1,7 @@
-# Edge Cases and Special Values
-Learn how go-errors handles complex JavaScript values and edge cases
+---
+title: "Edge Cases and Special Values"
+description: "Learn how go-errors handles complex JavaScript values and edge cases"
+---
 
 ## Complex Objects
 
@@ -30,7 +32,7 @@ let [result, err] = go(() => {
 ### Circular References
 
 ```typescript
-const circular: any = { foo: "bar" };
+let circular: any = { foo: "bar" };
 circular.self = circular;
 
 let [result, err] = go(() => {
@@ -44,7 +46,7 @@ let [result, err] = go(() => {
 ### Symbol Handling
 
 ```typescript
-const sym = Symbol('test');
+let sym = Symbol('test');
 let [result, err] = go(() => {
   throw sym;
 });
@@ -73,7 +75,7 @@ let [result, err] = go(() => {
 ### Date Objects
 
 ```typescript
-const date = new Date('2024-01-01');
+let date = new Date('2024-01-01');
 let [result, err] = go(() => {
   throw date;
 });
@@ -83,7 +85,7 @@ let [result, err] = go(() => {
 ### RegExp Objects
 
 ```typescript
-const regex = /test/gi;
+let regex = /test/gi;
 let [result, err] = go(() => {
   throw regex;
 });

@@ -5,21 +5,21 @@ The `goFetch` function is a powerful wrapper around the Fetch API that provides 
 ## Type Signature
 
 ```typescript
-function goFetch<T = any, E = string>(
+function goFetch<T, E = Error>(
   input: RequestInfo | URL,
   options?: GoFetchOptions<T, E>
 ): Promise<Result<T, E>>
 ```
 
 Where:
-- `T`: The expected response data type (defaults to `any`)
-- `E`: The error type (defaults to `string`)
+- `T`: The expected response data type
+- `E`: The error type (defaults to `Error`)
 - `GoFetchOptions<T, E>`: Extended fetch options with transformers
 
 ## Options Interface
 
 ```typescript
-interface GoFetchOptions<T = any, E = string> extends RequestInit {
+interface GoFetchOptions<T, E = Error> extends RequestInit {
   // Transform the response data before returning
   responseTransformer?: (data: unknown) => T;
   
@@ -45,228 +45,217 @@ interface GoFetchOptions<T = any, E = string> extends RequestInit {
 import { goFetch } from 'go-errors';
 
 // Basic usage
-let [data, err] = await goFetch('https://api.example.com/data');
+let [data, err] = await goFetch('/api/data');
 if (err) {
   console.error('Failed to fetch:', err);
   return;
 }
 console.log('Got data:', data);
-```
 
-### Typed Response
-
-```typescript
+// With type safety
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
 }
 
-let [user, err] = await goFetch<User>('https://api.example.com/user/1');
+let [user, err] = await goFetch<User>('/api/user/123');
 if (err) {
   console.error('Failed to fetch user:', err);
   return;
 }
-// user is typed as User
-console.log('User name:', user.name);
+console.log('User:', user);
 ```
 
-## Advanced Usage
+### With Response Transformation
 
-### POST Request with Body
+```typescript
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+}
+
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
+if (err) {
+  console.error('Failed to fetch user:', err);
+  return;
+}
+console.log('User:', user.fullName);
+```
+
+### With Error Transformation
+
+```typescript
+interface ApiError {
+  code: string;
+  message: string;
+  details?: string;
+}
+
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
+    }
+    if (error instanceof Error) {
+      return {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: String(error)
+    };
+  }
+});
+
+if (err) {
+  switch (err.code) {
+    case 'HTTP_404':
+      console.error('User not found');
+      break;
+    case 'HTTP_401':
+      console.error('Unauthorized');
+      break;
+    default:
+      console.error(`Error: ${err.message}`);
+  }
+}
+```
+
+### POST Request
 
 ```typescript
 interface CreateUserRequest {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
 }
 
 interface CreateUserResponse {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
   createdAt: string;
 }
 
-let [newUser, err] = await goFetch<CreateUserResponse>(
-  'https://api.example.com/users',
-  {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      name: 'John Doe',
-      email: 'john@example.com',
-    } as CreateUserRequest),
-  }
-);
-```
-
-### Response Transformation
-
-```typescript
-interface ApiResponse<T> {
-  data: T;
-  metadata: {
-    timestamp: string;
-    version: string;
-  };
-}
-
-interface User {
-  id: number;
-  name: string;
-}
-
-let [user, err] = await goFetch<User>('https://api.example.com/user/1', {
-  responseTransformer: (data: unknown) => {
-    const response = data as ApiResponse<User>;
-    // Add custom validation
-    if (!response.data.id) {
-      throw new Error('Invalid user data');
-    }
-    return response.data;
+let [newUser, err] = await goFetch<CreateUserResponse>('/api/users', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
   },
-});
-```
-
-### Error Transformation
-
-```typescript
-interface ApiError {
-  code: number;
-  message: string;
-  details?: string;
-}
-
-let [data, err] = await goFetch<User, ApiError>('https://api.example.com/user/1', {
-  errorTransformer: (error: unknown) => {
-    if (error instanceof Error) {
-      return {
-        code: 500,
-        message: error.message,
-        details: error.stack,
-      };
-    }
-    return {
-      code: 400,
-      message: 'Unknown error',
-    };
-  },
+  body: JSON.stringify({
+    firstName: 'John',
+    lastName: 'Doe',
+    email: 'john@example.com',
+  } as CreateUserRequest),
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
 });
 
 if (err) {
-  // err is typed as ApiError
-  console.error(`API Error ${err.code}: ${err.message}`);
-  if (err.details) {
-    console.error('Details:', err.details);
-  }
+  console.error('Failed to create user:', err);
   return;
 }
-```
-
-### Complete Example with All Options
-
-```typescript
-interface ApiResponse<T> {
-  data: T;
-  status: string;
-  metadata: {
-    timestamp: string;
-    version: string;
-  };
-}
-
-interface ApiError {
-  code: number;
-  message: string;
-  details?: string;
-}
-
-interface User {
-  id: number;
-  name: string;
-  email: string;
-}
-
-async function fetchUserData(userId: string) {
-  let [user, err] = await goFetch<User, ApiError>(
-    `https://api.example.com/user/${userId}`,
-    {
-      method: 'GET',
-      headers: {
-        'Authorization': 'Bearer your-token',
-        'Accept': 'application/json',
-      },
-      credentials: 'include',
-      responseTransformer: (data: unknown) => {
-        const response = data as ApiResponse<User>;
-        if (!response.data.id) {
-          throw new Error('Invalid user data');
-        }
-        return response.data;
-      },
-      errorTransformer: (error: unknown) => {
-        if (error instanceof Error) {
-          return {
-            code: 500,
-            message: error.message,
-            details: error.stack,
-          };
-        }
-        return {
-          code: 400,
-          message: 'Unknown error',
-        };
-      },
-    }
-  );
-
-  if (err) {
-    console.error(`API Error ${err.code}: ${err.message}`);
-    return [null, err] as const;
-  }
-
-  return [user, null] as const;
-}
+console.log('Created user:', newUser);
 ```
 
 ## Best Practices
 
-1. **Always Type Your Responses**
-   ```typescript
-   // ✅ Good: Explicit typing
-   let [user, err] = await goFetch<User>('/api/user');
-   
-   // ❌ Bad: Implicit any
-   let [data, err] = await goFetch('/api/user');
-   ```
+1. Always use `let` for result declarations:
+```typescript
+// ✅ Good: Using let
+let [data, err] = await goFetch('/api/data');
+if (err) return [null, err] as const;
 
-2. **Use Custom Error Types**
-   ```typescript
-   // ✅ Good: Custom error type
-   let [data, err] = await goFetch<User, ApiError>('/api/user');
-   
-   // ❌ Bad: Default string error
-   let [data, err] = await goFetch<User>('/api/user');
-   ```
+// ❌ Bad: Using const
+const [data, error] = await goFetch('/api/data');
+```
 
-3. **Validate Response Data**
-   ```typescript
-   // ✅ Good: Validate response
-   let [user, err] = await goFetch<User>('/api/user', {
-     responseTransformer: (data) => {
-       if (!isValidUser(data)) {
-         throw new Error('Invalid user data');
-       }
-       return data as User;
-     },
-   });
-   ```
+2. Always check for errors before using the result:
+```typescript
+// ✅ Good: Check errors first
+let [user, err] = await goFetch<User>('/api/user/123');
+if (err) {
+  console.error('Failed:', err);
+  return;
+}
+console.log('User:', user);
 
-## Related
+// ❌ Bad: Using data without checking
+let [user, err] = await goFetch<User>('/api/user/123');
+console.log('User:', user); // user might be null!
+```
 
-- [go Function](/docs/api-reference/go) - For general error handling
-- [HTTP Guide](/docs/guides/http-requests) - For more HTTP patterns
-- [Error Handling Guide](/docs/guides/error-handling) - For error handling patterns 
+3. Use type parameters for better type safety:
+```typescript
+// ✅ Good: Explicit types
+let [user, err] = await goFetch<User, ApiError>('/api/user/123');
+
+// ❌ Bad: Implicit any
+let [data, err] = await goFetch('/api/user/123');
+```
+
+4. Use transformers to ensure consistent data shape:
+```typescript
+// ✅ Good: Transform response data
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
+// ❌ Bad: Manual transformation after fetch
+let [data, err] = await goFetch('/api/user/123');
+if (err) return [null, err] as const;
+const user = {
+  ...data,
+  fullName: `${data.firstName} ${data.lastName}`
+};
+```
+
+5. Use error transformers for consistent error handling:
+```typescript
+// ✅ Good: Transform errors
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => ({
+    code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error)
+  })
+});
+
+// ❌ Bad: Manual error handling
+let [data, err] = await goFetch('/api/user');
+if (err) {
+  if (err instanceof Response) {
+    // Handle response error
+  } else if (err instanceof Error) {
+    // Handle error
+  }
+}
+```
+
+## See Also
+
+- [Core Functions](/docs/api-reference/core-functions)
+- [Error Handling](/docs/api-reference/error-handling)
+- [HTTP Guide](/docs/guides/http-requests) 

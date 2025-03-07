@@ -1,13 +1,12 @@
-# go Function
+# go Functions
 
-The `go` function is the core utility of the library that handles both synchronous and asynchronous operations in a Go-style error handling pattern.
+The library provides two core functions for Go-style error handling: `goSync` for synchronous operations and `go` for asynchronous operations.
 
-## Type Signature
+## Type Signatures
 
 ```typescript
-function go<T, E = Error>(
-  fn: (() => T) | Promise<T>
-): Result<T, E>
+function goSync<T, E = Error>(fn: () => T): Result<T, E>
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>
 ```
 
 Where:
@@ -20,15 +19,15 @@ Where:
 ### Synchronous Operations
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 // Simple value return
-let [value, err] = go(() => {
+let [value, err] = goSync(() => {
   return 42;
 });
 
 // With potential error
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   if (someCondition) throw new Error('Something went wrong');
   return 'success';
 });
@@ -49,10 +48,7 @@ import { go } from 'go-errors';
 let [data, err] = await go(Promise.resolve('async data'));
 
 // With async functions
-let [result, err] = await go(async () => {
-  const response = await someAsyncOperation();
-  return response.data;
-});
+let [result, err] = await go(someAsyncOperation());
 
 if (err) {
   console.error('Async operation failed:', err);
@@ -72,7 +68,7 @@ class ValidationError extends Error {
   }
 }
 
-let [value, err] = go<number, ValidationError>(() => {
+let [value, err] = goSync<number, ValidationError>(() => {
   if (input < 0) {
     throw new ValidationError('input', 'Must be positive');
   }
@@ -86,14 +82,14 @@ if (err) {
 
 ## Error Propagation
 
-The `go` function makes it easy to propagate errors up the call stack:
+The functions make it easy to propagate errors up the call stack:
 
 ```typescript
 function validateUser(user: User) {
-  let [isValid, err] = go(() => validateUserData(user));
+  let [isValid, err] = goSync(() => validateUserData(user));
   if (err) return [null, err] as const;
 
-  let [saved, err] = go(() => saveUser(user));
+  let [saved, err] = go(saveUser(user));
   if (err) return [null, err] as const;
 
   return [saved, null] as const;
@@ -102,20 +98,23 @@ function validateUser(user: User) {
 
 ## Best Practices
 
-1. **Use `let` for Declarations**
+1. **Always Use `let` for Declarations**
    ```typescript
-   // ✅ Good: Reuse err variable
-   let [value, err] = go(() => operation1());
+   // ✅ Good: Using let and reusing err variable
+   let [value, err] = goSync(() => operation1());
    if (err) return handleError(err);
 
-   let [result, err] = go(() => operation2());
+   let [result, err] = goSync(() => operation2());
    if (err) return handleError(err);
+
+   // ❌ Bad: Using const
+   const [data, error] = goSync(() => operation());
    ```
 
 2. **Early Returns**
    ```typescript
    // ✅ Good: Early return pattern
-   let [data, err] = go(() => fetchData());
+   let [data, err] = await go(fetchData());
    if (err) return [null, err] as const;
 
    // Continue processing data...
@@ -124,7 +123,7 @@ function validateUser(user: User) {
 3. **Type Safety**
    ```typescript
    // ✅ Good: Explicit type parameters
-   let [user, err] = go<User, ApiError>(() => fetchUser(id));
+   let [user, err] = await go<User, ApiError>(fetchUser(id));
    ```
 
 ## Common Patterns
@@ -136,7 +135,7 @@ async function processUser(userId: string) {
   let [user, err] = await go(fetchUser(userId));
   if (err) return [null, err] as const;
 
-  let [validated, err] = go(() => validateUser(user));
+  let [validated, err] = goSync(() => validateUser(user));
   if (err) return [null, err] as const;
 
   let [saved, err] = await go(saveUser(validated));
@@ -163,6 +162,24 @@ let [data, err] = await go(async () => {
 });
 ```
 
+### Using with goFetch
+
+For HTTP requests, it's recommended to use the dedicated `goFetch` function instead of wrapping fetch calls:
+
+```typescript
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    id: data.id,
+    name: `${data.firstName} ${data.lastName}`
+  })
+});
+
+if (err) {
+  console.error('Failed to fetch user:', err);
+  return;
+}
+```
+
 ## Return Type Safety
 
 The `Result` type ensures type safety throughout your application:
@@ -171,7 +188,7 @@ The `Result` type ensures type safety throughout your application:
 type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
 
 // TypeScript will enforce correct typing
-let [value, err]: Result<number> = go(() => 42);
+let [value, err]: Result<number> = goSync(() => 42);
 if (err) {
   // err is typed as Error
   console.error(err.message);

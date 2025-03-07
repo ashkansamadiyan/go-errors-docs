@@ -9,10 +9,10 @@ This guide will help you get started with go-errors quickly. We'll cover the bas
 
 ## Basic Usage
 
-First, import the `go` function from go-errors:
+First, import the necessary functions from go-errors:
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 ```
 
 ### Synchronous Error Handling
@@ -26,10 +26,10 @@ function divide(a: number, b: number): number {
 }
 
 // Using go-errors
-const [result, error] = go(() => divide(10, 0));
+let [result, err] = goSync(() => divide(10, 0));
 
-if (error) {
-  console.log("Failed to divide:", error.message);
+if (err) {
+  console.log("Failed to divide:", err.message);
   // Handle the error case
 } else {
   console.log("Result:", result);
@@ -39,31 +39,37 @@ if (error) {
 
 ### Asynchronous Error Handling
 
-go-errors works seamlessly with async functions and Promises:
+go-errors provides a powerful `goFetch` function for handling HTTP requests:
 
 ```typescript
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
 async function fetchUserData(id: string) {
-  const [response, fetchError] = await go(
-    fetch(`https://api.example.com/users/${id}`)
-  );
+  let [user, err] = await goFetch<User>(`/api/users/${id}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
   
-  if (fetchError) {
-    return [null, fetchError] as const;
+  if (err) {
+    console.error("Failed to fetch user:", err);
+    return [null, err] as const;
   }
   
-  const [data, parseError] = await go(response.json());
-  if (parseError) {
-    return [null, parseError] as const;
-  }
-  
-  return [data, null] as const;
+  return [user, null] as const;
 }
 
 // Usage
 async function main() {
-  const [userData, error] = await fetchUserData("123");
-  if (error) {
-    console.error("Failed to fetch user:", error.message);
+  let [userData, err] = await fetchUserData("123");
+  if (err) {
+    console.error("Failed to fetch user:", err.message);
     return;
   }
   console.log("User data:", userData);
@@ -76,30 +82,47 @@ You can use custom error types for more specific error handling:
 
 ```typescript
 class ValidationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
     super(message);
     this.name = 'ValidationError';
   }
 }
 
 function validateUser(user: unknown) {
-  if (typeof user !== 'object' || !user) {
-    throw new ValidationError('Invalid user object');
+  let [result, err] = goSync<unknown, ValidationError>(() => {
+    if (typeof user !== 'object' || !user) {
+      throw new ValidationError(
+        'Invalid user object',
+        'user',
+        user
+      );
+    }
+    return user;
+  });
+
+  if (err) {
+    console.error(
+      `Validation failed: ${err.message}`,
+      `Field: ${err.field}`,
+      `Value: ${err.value}`
+    );
+    return [null, err] as const;
   }
-  return user;
+
+  return [result, null] as const;
 }
 
-const [user, error] = go<unknown, ValidationError>(() => 
-  validateUser({ name: 'John' })
-);
-
-if (error) {
-  if (error instanceof ValidationError) {
-    console.log("Validation failed:", error.message);
-  } else {
-    console.log("Unknown error:", error.message);
-  }
+// Usage
+let [user, err] = validateUser({ name: 'John' });
+if (err) {
+  console.error('Validation failed:', err.message);
+  return;
 }
+console.log('Valid user:', user);
 ```
 
 ## Error Propagation
@@ -108,36 +131,82 @@ go-errors makes it easy to propagate errors up the call stack:
 
 ```typescript
 function processStep1() {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     // ... some operation that might throw
     return "step1 result";
   });
-  if (error) return [null, error] as const;
+  if (err) return [null, err] as const;
   return [result, null] as const;
 }
 
 function processStep2(input: string) {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     // ... process the input
     return "step2 result";
   });
-  if (error) return [null, error] as const;
+  if (err) return [null, err] as const;
   return [result, null] as const;
 }
 
 async function process() {
-  const [step1Result, step1Error] = processStep1();
-  if (step1Error) {
-    return [null, step1Error] as const;
+  let [step1Result, err] = processStep1();
+  if (err) {
+    return [null, err] as const;
   }
 
-  const [step2Result, step2Error] = processStep2(step1Result);
-  if (step2Error) {
-    return [null, step2Error] as const;
+  let [step2Result, err] = processStep2(step1Result);
+  if (err) {
+    return [null, err] as const;
   }
 
   return [step2Result, null] as const;
 }
+```
+
+## Best Practices
+
+1. Always use `let` for result declarations:
+```typescript
+// ✅ Good: Using let
+let [value, err] = goSync(() => validate(input));
+if (err) return [null, err] as const;
+
+// ❌ Bad: Using const
+const [data, error] = goSync(() => validate(input));
+```
+
+2. Always check errors before using values:
+```typescript
+// ✅ Good: Check errors first
+let [data, err] = await goFetch('/api/data');
+if (err) {
+  console.error('Failed:', err);
+  return;
+}
+console.log('Data:', data);
+
+// ❌ Bad: Using data without checking
+let [data, err] = await goFetch('/api/data');
+console.log('Data:', data); // data might be null!
+```
+
+3. Use type parameters for better type safety:
+```typescript
+// ✅ Good: Explicit types
+let [user, err] = await goFetch<User, ApiError>('/api/user/123');
+
+// ❌ Bad: Implicit any
+let [data, err] = await goFetch('/api/user/123');
+```
+
+4. Use `as const` for return values:
+```typescript
+// ✅ Good: Using as const
+return [value, null] as const;
+return [null, err] as const;
+
+// ❌ Bad: Without as const
+return [value, null];
 ```
 
 ## Next Steps

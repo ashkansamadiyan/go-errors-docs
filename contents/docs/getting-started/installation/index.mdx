@@ -5,24 +5,10 @@ description: Get started with go-errors in your project
 
 # Installation
 
-Getting started with go-errors is straightforward. You can install it using your preferred package manager:
-
-## Using npm
+Getting started with go-errors is straightforward. You can install it using bun:
 
 ```bash
-npm install go-errors
-```
-
-## Using yarn
-
-```bash
-yarn add go-errors
-```
-
-## Using pnpm
-
-```bash
-pnpm add go-errors
+bun add go-errors
 ```
 
 ## TypeScript Configuration
@@ -45,15 +31,15 @@ For optimal usage, ensure your `tsconfig.json` includes:
 You can verify your installation by creating a simple test file:
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 // Try a simple synchronous operation
-const [value, error] = go(() => {
+let [value, err] = goSync(() => {
   return "Installation successful!";
 });
 
-if (error) {
-  console.error("Something went wrong:", error.message);
+if (err) {
+  console.error("Something went wrong:", err.message);
 } else {
   console.log(value); // Should print "Installation successful!"
 }

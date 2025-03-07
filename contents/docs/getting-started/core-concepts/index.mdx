@@ -12,31 +12,57 @@ go-errors is built around several core concepts that make error handling in Type
 The foundation of go-errors is the `Result` type:
 
 ```typescript
-type Result<T, E = Error> = [T, null] | [null, E];
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
 ```
 
 This type represents either a successful result with a value of type `T`, or an error of type `E`. The key characteristics are:
 
-- It's a tuple type with exactly two elements
+- It's a readonly tuple type with exactly two elements
 - One element is always `null`
 - The other element is either the value or the error
 - The error type defaults to `Error` but can be customized
 
-## The `go` Function
+## Core Functions
 
-The main function in go-errors is the `go` function, which has two overloads:
+go-errors provides three main functions:
 
 ```typescript
-function go<T, E = Error>(fn: () => T): Result<T, E>;
+// For synchronous operations
+function goSync<T, E = Error>(fn: () => T): Result<T, E>;
+
+// For asynchronous operations
 function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+
+// For HTTP requests
+function goFetch<T, E = Error>(
+  url: string,
+  options?: GoFetchOptions<T, E>
+): Promise<Result<T, E>>;
 ```
 
-Key points about the `go` function:
+Key points about these functions:
 
-1. It handles both synchronous and asynchronous operations
-2. It automatically catches any thrown errors
-3. It returns a `Result` type (or Promise of Result for async operations)
-4. It preserves type information for both success and error cases
+1. `goSync` handles synchronous operations
+2. `go` handles asynchronous operations
+3. `goFetch` provides enhanced fetch capabilities with transformers
+4. All functions return a `Result` type (or Promise of Result for async operations)
+5. All preserve type information for both success and error cases
+
+## Variable Declaration Style
+
+Following Go's convention, we use `let` for result declarations:
+
+```typescript
+// ✅ Good: Using let
+let [value, err] = goSync(() => someOperation());
+if (err) return handleError(err);
+
+let [result, err] = goSync(() => anotherOperation());
+if (err) return handleError(err);
+
+// ❌ Bad: Using const
+const [data, error] = goSync(() => operation()); // Less idiomatic
+```
 
 ## Error Handling Pattern
 
@@ -51,20 +77,20 @@ Example of the pattern:
 
 ```typescript
 // Basic pattern
-const [value, error] = go(() => someOperation());
-if (error) {
+let [value, err] = goSync(() => someOperation());
+if (err) {
   // Handle error case
-  return [null, error] as const;
+  return [null, err] as const;
 }
 // Use value safely here
 
 // Composition pattern
 function processData() {
-  const [data, error1] = go(() => fetchData());
-  if (error1) return [null, error1] as const;
+  let [data, err] = goSync(() => fetchData());
+  if (err) return [null, err] as const;
 
-  const [processed, error2] = go(() => processStep(data));
-  if (error2) return [null, error2] as const;
+  let [processed, err] = goSync(() => processStep(data));
+  if (err) return [null, err] as const;
 
   return [processed, null] as const;
 }
@@ -76,23 +102,23 @@ go-errors leverages TypeScript's type system to ensure type safety:
 
 ```typescript
 // Generic type parameters
-const [value, error] = go<string, ValidationError>(() => {
+let [value, err] = goSync<string, ValidationError>(() => {
   // TypeScript knows:
   // - value is string | null
-  // - error is ValidationError | null
+  // - err is ValidationError | null
   // - exactly one of them is null
   return "hello";
 });
 
 // Type narrowing
-if (error) {
+if (err) {
   // TypeScript knows:
   // - value is null
-  // - error is ValidationError
+  // - err is ValidationError
 } else {
   // TypeScript knows:
   // - value is string
-  // - error is null
+  // - err is null
 }
 ```
 
@@ -102,26 +128,26 @@ Async operations work similarly to sync ones, but return a Promise of Result:
 
 ```typescript
 // Async pattern
-const [data, error] = await go(fetchData());
-if (error) {
+let [data, err] = await go(fetchData());
+if (err) {
   // Handle error
-  return [null, error] as const;
+  return [null, err] as const;
 }
 // Use data safely
 
-// Chaining async operations
-async function processUser(id: string) {
-  const [user, userError] = await go(fetchUser(id));
-  if (userError) return [null, userError] as const;
+// Using goFetch
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
 
-  const [posts, postsError] = await go(fetchUserPosts(user.id));
-  if (postsError) return [null, postsError] as const;
-
-  return [{
-    user,
-    posts
-  }, null] as const;
+if (err) {
+  // Handle error
+  return [null, err] as const;
 }
+// Use user safely
 ```
 
 ## Error Propagation
@@ -129,29 +155,50 @@ async function processUser(id: string) {
 Error propagation in go-errors is explicit and type-safe:
 
 ```typescript
-type Result<T, E> = [T, null] | [null, E];
+type Result<T, E> = readonly [T, null] | readonly [null, E];
 
 function step1(): Result<string, Error> {
-  const [value, error] = go(() => "step1");
-  if (error) return [null, error];
-  return [value, null];
+  let [value, err] = goSync(() => "step1");
+  if (err) return [null, err] as const;
+  return [value, null] as const;
 }
 
 function step2(input: string): Result<number, Error> {
-  const [value, error] = go(() => input.length);
-  if (error) return [null, error];
-  return [value, null];
+  let [value, err] = goSync(() => input.length);
+  if (err) return [null, err] as const;
+  return [value, null] as const;
 }
 
 function process(): Result<number, Error> {
-  const [step1Result, step1Error] = step1();
-  if (step1Error) return [null, step1Error];
+  let [step1Result, err] = step1();
+  if (err) return [null, err] as const;
 
-  const [step2Result, step2Error] = step2(step1Result);
-  if (step2Error) return [null, step2Error];
+  let [step2Result, err] = step2(step1Result);
+  if (err) return [null, err] as const;
 
-  return [step2Result, null];
+  return [step2Result, null] as const;
 }
+```
+
+## Response Transformation
+
+The `goFetch` function provides powerful response transformation capabilities:
+
+```typescript
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
+let [user, err] = await goFetch<User>('/api/user/1', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  }),
+  errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
+});
 ```
 
 ## Next Steps

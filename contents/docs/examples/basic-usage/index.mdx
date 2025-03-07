@@ -10,54 +10,57 @@ This page provides basic examples of using go-errors in common scenarios.
 ## Simple Error Handling
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 function divide(a: number, b: number) {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     if (b === 0) throw new Error('Division by zero');
     return a / b;
   });
 
-  if (error) {
-    console.error('Division failed:', error.message);
-    return null;
+  if (err) {
+    console.error('Division failed:', err.message);
+    return [null, err] as const;
   }
 
-  return result;
+  return [result, null] as const;
 }
 
 // Usage
-console.log(divide(10, 2));  // Output: 5
-console.log(divide(10, 0));  // Output: null (with error logged)
+let [result, err] = divide(10, 2);
+if (err) {
+  console.error('Error:', err.message);
+} else {
+  console.log('Result:', result);  // Output: 5
+}
 ```
 
 ## Async Operations
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
 
 async function fetchUserData(userId: string) {
-  const [response, fetchError] = await go(
-    fetch(`https://api.example.com/users/${userId}`)
-  );
+  let [user, err] = await goFetch<User>(`/api/users/${userId}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
   
-  if (fetchError) {
-    console.error('Failed to fetch user:', fetchError.message);
-    return null;
+  if (err) {
+    console.error('Failed to fetch user:', err.message);
+    return [null, err] as const;
   }
 
-  const [data, parseError] = await go(response.json());
-  if (parseError) {
-    console.error('Failed to parse response:', parseError.message);
-    return null;
-  }
-
-  return data;
+  return [user, null] as const;
 }
 
 // Usage
-const userData = await fetchUserData('123');
-if (userData) {
+let [userData, err] = await fetchUserData('123');
+if (err) {
+  console.error('Error:', err.message);
+} else {
   console.log('User data:', userData);
 }
 ```
@@ -65,31 +68,95 @@ if (userData) {
 ## Multiple Operations
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, go, goFetch } from 'go-errors';
 
 async function processUserData(userId: string) {
   // Fetch user data
-  const [userData, userError] = await go(fetchUser(userId));
-  if (userError) {
-    console.error('Failed to fetch user:', userError.message);
-    return null;
+  let [user, err] = await goFetch<User>(`/api/users/${userId}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
+  
+  if (err) {
+    console.error('Failed to fetch user:', err.message);
+    return [null, err] as const;
   }
 
   // Validate user data
-  const [validatedData, validationError] = go(() => validateUser(userData));
-  if (validationError) {
-    console.error('Validation failed:', validationError.message);
-    return null;
+  let [validatedData, err] = goSync(() => validateUser(user));
+  if (err) {
+    console.error('Validation failed:', err.message);
+    return [null, err] as const;
   }
 
   // Save to database
-  const [savedUser, saveError] = await go(saveToDatabase(validatedData));
-  if (saveError) {
-    console.error('Failed to save user:', saveError.message);
-    return null;
+  let [savedUser, err] = await go(saveToDatabase(validatedData));
+  if (err) {
+    console.error('Failed to save user:', err.message);
+    return [null, err] as const;
   }
 
-  return savedUser;
+  return [savedUser, null] as const;
+}
+
+// Usage
+let [result, err] = await processUserData('123');
+if (err) {
+  console.error('Error:', err.message);
+} else {
+  console.log('Processed user:', result);
+}
+```
+
+## API Integration
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface ApiResponse<T> {
+  data: T;
+  metadata: {
+    timestamp: string;
+    version: string;
+  };
+}
+
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+}
+
+async function fetchUser(id: string) {
+  let [response, err] = await goFetch<ApiResponse<User>>(`/api/users/${id}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      data: {
+        ...data.data,
+        fullName: `${data.data.firstName} ${data.data.lastName}`
+      }
+    }),
+    errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
+  });
+
+  if (err) {
+    console.error('API Error:', err.message);
+    return [null, err] as const;
+  }
+
+  return [response.data, null] as const;
+}
+
+// Usage
+let [user, err] = await fetchUser('123');
+if (err) {
+  console.error('Error:', err.message);
+} else {
+  console.log('User:', user.fullName);
 }
 ```
 

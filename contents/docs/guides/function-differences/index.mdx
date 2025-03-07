@@ -1,5 +1,7 @@
-# Understanding go, goSync, and goAsync
-Learn when and how to use each function variant effectively
+---
+title: "Understanding go, goSync, and goAsync"
+description: "Learn when and how to use each function variant effectively"
+---
 
 This guide explains the differences between the three main functions provided by go-errors: `go`, `goSync`, and `goAsync`.
 
@@ -9,13 +11,13 @@ This guide explains the differences between the three main functions provided by
 import { go, goSync, goAsync } from 'go-errors';
 
 // go: Universal function that handles both sync and async operations
-const [result1, error1] = await go(operation);
+let [result1, err1] = await go(operation);
 
 // goSync: Specifically for synchronous operations
-const [result2, error2] = goSync(syncOperation);
+let [result2, err2] = goSync(syncOperation);
 
 // goAsync: Specifically for asynchronous operations
-const [result3, error3] = await goAsync(asyncOperation);
+let [result3, err3] = await goAsync(asyncOperation);
 ```
 
 ## The `go` Function
@@ -24,17 +26,17 @@ The `go` function is the universal solution that handles both synchronous and as
 
 ```typescript
 // Handling synchronous operations
-const [syncResult, syncError] = await go(() => {
+let [syncResult, err] = await go(() => {
   return "hello";
 });
 
 // Handling asynchronous operations
-const [asyncResult, asyncError] = await go(async () => {
+let [asyncResult, err] = await go(async () => {
   return await fetch("https://api.example.com/data");
 });
 
 // Handling promises directly
-const [promiseResult, promiseError] = await go(
+let [promiseResult, err] = await go(
   Promise.resolve("hello")
 );
 ```
@@ -43,13 +45,13 @@ const [promiseResult, promiseError] = await go(
 
 ```typescript
 // go infers return types correctly
-const [num, err1] = await go(() => 42);
+let [num, err] = await go(() => 42);
 // num is number | null
-// err1 is Error | null
+// err is Error | null
 
-const [str, err2] = await go(async () => "hello");
+let [str, err] = await go(async () => "hello");
 // str is string | null
-// err2 is Error | null
+// err is Error | null
 ```
 
 ## The `goSync` Function
@@ -58,21 +60,21 @@ const [str, err2] = await go(async () => "hello");
 
 ```typescript
 // Basic usage
-const [result, error] = goSync(() => {
+let [result, err] = goSync(() => {
   return "hello";
 });
 
 // Type inference
-const [num, err] = goSync(() => 42);
+let [num, err] = goSync(() => 42);
 // num is number | null
 // err is Error | null
 
 // Error handling
-const [result, error] = goSync(() => {
+let [result, err] = goSync(() => {
   throw new Error("Something went wrong");
 });
 // result is null
-// error is Error
+// err is Error
 ```
 
 ### When to Use `goSync`

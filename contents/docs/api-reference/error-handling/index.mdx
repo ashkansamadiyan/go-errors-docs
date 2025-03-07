@@ -13,17 +13,63 @@ go-errors automatically normalizes thrown values into proper Error objects:
 
 ```typescript
 // String errors are converted to Error objects
-const [_, error1] = go(() => { throw "something went wrong"; });
-console.log(error1 instanceof Error); // true
-console.log(error1.message); // "something went wrong"
+let [_, err] = goSync(() => { throw "something went wrong"; });
+console.log(err instanceof Error); // true
+console.log(err.message); // "something went wrong"
 
 // Objects are preserved but wrapped if not Error instances
-const [_, error2] = go(() => { 
-  throw { code: 404, message: "Not found" }; 
+let [_, err] = goSync(() => { 
+  throw { code: 'NOT_FOUND', message: "Not found" }; 
 });
-console.log(error2 instanceof Error); // true
-console.log(error2.code); // 404
-console.log(error2.message); // "Not found"
+console.log(err instanceof Error); // true
+console.log(err.code); // 'NOT_FOUND'
+console.log(err.message); // "Not found"
+```
+
+## Error Transformation
+
+The `goFetch` function provides powerful error transformation capabilities:
+
+```typescript
+interface ApiError {
+  code: string;
+  message: string;
+  details?: string;
+}
+
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
+    }
+    if (error instanceof Error) {
+      return {
+        code: 'INTERNAL_ERROR',
+        message: error.message
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: String(error)
+    };
+  }
+});
+
+if (err) {
+  switch (err.code) {
+    case 'HTTP_404':
+      console.error('User not found');
+      break;
+    case 'HTTP_401':
+      console.error('Unauthorized');
+      break;
+    default:
+      console.error(`Error: ${err.message}`);
+  }
+}
 ```
 
 ## Error Propagation
@@ -32,54 +78,157 @@ go-errors makes it easy to propagate errors up the call stack:
 
 ```typescript
 function processData() {
-  const [data, error] = getData();
-  if (error) return [null, error] as const;
+  let [data, err] = getData();
+  if (err) return [null, err] as const;
   // process data
 }
 
 async function process() {
-  const [step1Result, step1Error] = processStep1();
-  if (step1Error) {
-    return [null, step1Error] as const;
+  let [step1Result, err] = processStep1();
+  if (err) {
+    return [null, err] as const;
   }
 
-  const [step2Result, step2Error] = processStep2(step1Result);
-  if (step2Error) {
-    return [null, step2Error] as const;
+  let [step2Result, err] = processStep2(step1Result);
+  if (err) {
+    return [null, err] as const;
   }
 
   return [step2Result, null] as const;
 }
 ```
 
+## Error Context
+
+You can preserve error context when propagating errors:
+
+```typescript
+class ValidationError extends Error {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validateUser(data: unknown) {
+  let [result, err] = goSync(() => {
+    if (!data || typeof data !== 'object') {
+      throw new ValidationError(
+        'Invalid user data',
+        'user',
+        data
+      );
+    }
+    return data;
+  });
+
+  if (err) {
+    // Add more context to the error
+    return [null, new Error('User validation failed', { cause: err })] as const;
+  }
+
+  return [result, null] as const;
+}
+```
+
+## Error Handling Patterns
+
+### Sequential Operations
+
+```typescript
+async function processUser(userId: string) {
+  let [user, err] = await goFetch<User>(`/api/users/${userId}`);
+  if (err) return [null, err] as const;
+
+  let [validated, err] = goSync(() => validateUser(user));
+  if (err) return [null, err] as const;
+
+  let [saved, err] = await go(saveUser(validated));
+  if (err) return [null, err] as const;
+
+  return [saved, null] as const;
+}
+```
+
+### Parallel Operations
+
+```typescript
+async function fetchUserProfile(userId: string) {
+  const [userPromise, postsPromise] = await Promise.all([
+    goFetch<User>(`/api/user/${userId}`),
+    goFetch<Post[]>(`/api/user/${userId}/posts`)
+  ]);
+
+  let [user, userErr] = userPromise;
+  let [posts, postsErr] = postsPromise;
+
+  if (userErr || postsErr) {
+    return [null, userErr || postsErr] as const;
+  }
+
+  return [{
+    user,
+    posts
+  }, null] as const;
+}
+```
+
 ## Best Practices
 
-1. Use early returns with error checking:
+1. Always use `let` for result declarations:
 ```typescript
-const [data, error] = await fetchData();
-if (error) return [null, error] as const;
+// ✅ Good: Using let
+let [data, err] = await goFetch('/api/data');
+if (err) return [null, err] as const;
+
+// ❌ Bad: Using const
+const [data, error] = await goFetch('/api/data');
 ```
 
 2. Always check for errors before using the result:
 ```typescript
-const [user, error] = await getUser(id);
-if (error) {
+let [user, err] = await goFetch<User>(`/api/user/${id}`);
+if (err) {
   // Handle error case first
-  return handleError(error);
+  return handleError(err);
 }
 // Now we can safely use the user object
 processUser(user);
 ```
 
-3. Preserve error context when propagating:
+3. Use type assertions with `as const`:
+```typescript
+// ✅ Good: Using as const
+return [null, err] as const;
+return [result, null] as const;
+
+// ❌ Bad: Without as const
+return [null, err];
+```
+
+4. Use error transformers for consistent error types:
+```typescript
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => ({
+    code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error)
+  })
+});
+```
+
+5. Preserve error context when propagating:
 ```typescript
 function validateUser(data: unknown) {
-  const [result, error] = validate(data);
-  if (error) {
+  let [result, err] = goSync(() => validate(data));
+  if (err) {
     // Add context to the error
-    return [null, new ValidationError("User validation failed", { cause: error })];
+    return [null, new Error('User validation failed', { cause: err })] as const;
   }
-  return [result, null];
+  return [result, null] as const;
 }
 ```
 

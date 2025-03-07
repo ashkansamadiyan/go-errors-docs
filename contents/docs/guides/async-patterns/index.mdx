@@ -1,7 +1,7 @@
-# Async Patterns and Fetch Functionality
-Master asynchronous operations and HTTP requests with go-errors
-
-This guide covers advanced async patterns and fetch functionality in go-errors.
+---
+title: "Async Patterns and Fetch Functionality"
+description: "Master asynchronous operations and HTTP requests with go-errors"
+---
 
 ## Async Patterns
 
@@ -11,7 +11,7 @@ This guide covers advanced async patterns and fetch functionality in go-errors.
 import { go } from 'go-errors';
 
 // Handle promise timeouts
-const [result, err] = await Promise.race([
+let [result, err] = await Promise.race([
   go(longRunningOperation()),
   new Promise<[null, Error]>(resolve => 
     setTimeout(() => resolve([null, new Error('timeout')]), 5000)
@@ -32,7 +32,7 @@ const promises = [
   fetch('/api/data2')
 ];
 
-const results = await Promise.all(promises.map(p => go(p)));
+let results = await Promise.all(promises.map(p => go(p)));
 // results[0] and results[1] will each be [result, error] tuples
 ```
 
@@ -40,14 +40,14 @@ const results = await Promise.all(promises.map(p => go(p)));
 
 ```typescript
 // Handle nested promises elegantly
-const [result, err] = await go(
+let [result, err] = await go(
   Promise.resolve(Promise.resolve(42))
 );
 // result will be 42
 // err will be null
 
 // Handle rejected nested promises
-const [result, err] = await go(
+let [result, err] = await go(
   Promise.resolve(Promise.reject(new Error('Inner error')))
 );
 // result will be null
@@ -62,7 +62,7 @@ const [result, err] = await go(
 import { goFetch } from 'go-errors';
 
 // Simple GET request
-const [data, error] = await goFetch('https://api.example.com/data');
+let [data, error] = await goFetch('https://api.example.com/data');
 if (error) {
   console.error('Failed to fetch:', error);
 } else {
@@ -83,7 +83,7 @@ interface TransformedUser {
   displayName: string;
 }
 
-const [data, error] = await goFetch<TransformedUser>('https://api.example.com/user', {
+let [data, error] = await goFetch<TransformedUser>('https://api.example.com/user', {
   responseTransformer: (data: unknown) => ({
     userId: `user_${(data as User).id}`,
     displayName: (data as User).name.toUpperCase()
@@ -99,7 +99,7 @@ interface CustomError {
   message: string;
 }
 
-const [data, error] = await goFetch<unknown, CustomError>('https://api.example.com/data', {
+let [data, error] = await goFetch<unknown, CustomError>('https://api.example.com/data', {
   errorTransformer: (e) => ({
     code: e instanceof Error ? 'FETCH_ERROR' : 'UNKNOWN_ERROR',
     message: e instanceof Error ? e.message : 'Unknown error occurred'
@@ -125,7 +125,7 @@ interface ApiError {
   details: string;
 }
 
-const [data, error] = await goFetch<TransformedResponse, ApiError>(
+let [data, error] = await goFetch<TransformedResponse, ApiError>(
   'https://api.example.com/data',
   {
     responseTransformer: (data: unknown) => ({
@@ -144,19 +144,19 @@ const [data, error] = await goFetch<TransformedResponse, ApiError>(
 
 ```typescript
 // HTTP Errors
-const [data, error] = await goFetch('https://api.example.com/notfound');
+let [data, error] = await goFetch('https://api.example.com/notfound');
 if (error?.includes('HTTP error! status: 404')) {
   console.log('Resource not found');
 }
 
 // Network Errors
-const [data, error] = await goFetch('https://invalid-url');
+let [data, error] = await goFetch('https://invalid-url');
 if (error?.includes('Network error')) {
   console.log('Network is unreachable');
 }
 
 // Invalid JSON
-const [data, error] = await goFetch('https://api.example.com/invalid-json');
+let [data, error] = await goFetch('https://api.example.com/invalid-json');
 if (error?.includes('Failed to parse JSON')) {
   console.log('Server returned invalid JSON');
 }
@@ -167,7 +167,7 @@ if (error?.includes('Failed to parse JSON')) {
 1. **Always Set Timeouts**
    ```typescript
    // ✅ Good: Set timeouts for long-running operations
-   const [data, error] = await Promise.race([
+   let [data, error] = await Promise.race([
      goFetch('https://api.example.com/data'),
      new Promise<[null, Error]>(resolve => 
        setTimeout(() => resolve([null, new Error('Request timeout')]), 5000)
@@ -183,7 +183,7 @@ if (error?.includes('Failed to parse JSON')) {
      meta: { timestamp: number };
    }
    
-   const [data, error] = await goFetch<User>('https://api.example.com/user', {
+   let [data, error] = await goFetch<User>('https://api.example.com/user', {
      responseTransformer: (response: unknown) => {
        const typed = response as ApiResponse<User>;
        return typed.data;
@@ -194,7 +194,7 @@ if (error?.includes('Failed to parse JSON')) {
 3. **Handle All Error Cases**
    ```typescript
    // ✅ Good: Comprehensive error handling
-   const [data, error] = await goFetch('https://api.example.com/data');
+   let [data, error] = await goFetch('https://api.example.com/data');
    if (error) {
      if (error.includes('HTTP error! status: 429')) {
        // Handle rate limiting

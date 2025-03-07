@@ -25,42 +25,45 @@ Welcome to the **go-errors** documentation! This library brings Go-style error h
 - 🔄 **Go-style** result tuples `[value, error]`
 - ⚡ **Zero dependencies** and lightweight
 - 🔀 **Unified API** for both synchronous and asynchronous operations
+- 🌐 **Enhanced Fetch** with built-in transformers and type safety
 - 🛡️ **Predictable error handling** without try-catch blocks
 - 📦 **Tree-shakeable** and optimized for bundle size
 
 ## Quick Installation
 
 ```bash
-npm install go-errors
-# or
-yarn add go-errors
-# or
-pnpm add go-errors
+bun add go-errors
 ```
 
 ## Basic Usage
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 // Synchronous usage
-const [value, error] = go(() => {
+let [value, err] = goSync(() => {
   // Your code that might throw
   return "success";
 });
 
-if (error) {
-  console.error("Something went wrong:", error.message);
+if (err) {
+  console.error("Something went wrong:", err.message);
 } else {
   console.log("Got value:", value);
 }
 
-// Asynchronous usage
-const [data, err] = await go(fetch("https://api.example.com/data"));
+// Asynchronous usage with goFetch
+let [data, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
 if (err) {
   console.error("API call failed:", err.message);
 } else {
-  console.log("API data:", data);
+  console.log("User data:", data);
 }
 ```
 
@@ -77,7 +80,8 @@ Traditional error handling in JavaScript/TypeScript often relies on try-catch bl
 2. Ensuring type safety through TypeScript
 3. Separating error handling from business logic
 4. Making error cases explicit and impossible to ignore
-5. Supporting both synchronous and asynchronous operations
+5. Supporting both synchronous and asynchronous operations with a unified API
+6. Providing powerful fetch capabilities with built-in transformers
 
 ## Next Steps
 

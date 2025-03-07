@@ -10,36 +10,36 @@ This page demonstrates various patterns for propagating errors in go-errors.
 ## Basic Error Propagation
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 function step1() {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     // Some operation that might fail
     if (Math.random() < 0.5) throw new Error('Step 1 failed');
     return 'Step 1 success';
   });
   
-  if (error) return [null, error] as const;
+  if (err) return [null, err] as const;
   return [result, null] as const;
 }
 
 function step2(input: string) {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     // Another operation that might fail
     if (Math.random() < 0.5) throw new Error('Step 2 failed');
     return `${input} -> Step 2 success`;
   });
   
-  if (error) return [null, error] as const;
+  if (err) return [null, err] as const;
   return [result, null] as const;
 }
 
 async function process() {
-  const [step1Result, step1Error] = step1();
-  if (step1Error) return [null, step1Error] as const;
+  let [step1Result, err] = step1();
+  if (err) return [null, err] as const;
 
-  const [step2Result, step2Error] = step2(step1Result);
-  if (step2Error) return [null, step2Error] as const;
+  let [step2Result, err] = step2(step1Result);
+  if (err) return [null, err] as const;
 
   return [step2Result, null] as const;
 }
@@ -48,7 +48,7 @@ async function process() {
 ## Error Context Preservation
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 class ValidationError extends Error {
   constructor(message: string, public field: string) {
@@ -58,63 +58,138 @@ class ValidationError extends Error {
 }
 
 function validateEmail(email: string) {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     if (!email.includes('@')) {
       throw new ValidationError('Invalid email format', 'email');
     }
     return email;
   });
 
-  if (error) {
+  if (err) {
     // Add more context to the error
-    return [null, new Error(`Email validation failed: ${error.message}`, { cause: error })] as const;
+    return [null, new Error(`Email validation failed: ${err.message}`, { cause: err })] as const;
   }
 
   return [result, null] as const;
 }
 
 function validateUser(user: { email: string }) {
-  const [email, error] = validateEmail(user.email);
-  if (error) {
+  let [email, err] = validateEmail(user.email);
+  if (err) {
     // Propagate with additional context
-    return [null, new Error('User validation failed', { cause: error })] as const;
+    return [null, new Error('User validation failed', { cause: err })] as const;
   }
 
   return [{ ...user, email }, null] as const;
 }
 ```
 
-## Async Error Propagation
+## HTTP Error Propagation
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
+
+interface ApiError {
+  code: string;
+  message: string;
+  details?: string;
+}
+
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
+}
 
 async function fetchUserData(userId: string) {
-  const [response, fetchError] = await go(fetch(`/api/users/${userId}`));
-  if (fetchError) {
-    return [null, new Error('Failed to fetch user data', { cause: fetchError })] as const;
+  let [user, err] = await goFetch<User, ApiError>(`/api/users/${userId}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    }),
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        return {
+          code: `HTTP_${error.status}`,
+          message: error.statusText
+        };
+      }
+      return {
+        code: 'UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
+  });
+
+  if (err) {
+    return [null, new Error(`Failed to fetch user data: ${err.message}`, { cause: err })] as const;
   }
 
-  const [data, parseError] = await go(response.json());
-  if (parseError) {
-    return [null, new Error('Failed to parse user data', { cause: parseError })] as const;
-  }
-
-  return [data, null] as const;
+  return [user, null] as const;
 }
 
 async function processUserData(userId: string) {
-  const [userData, userError] = await fetchUserData(userId);
-  if (userError) {
-    return [null, new Error('User data processing failed', { cause: userError })] as const;
+  let [user, err] = await fetchUserData(userId);
+  if (err) {
+    return [null, new Error('User data processing failed', { cause: err })] as const;
   }
 
-  const [validatedData, validationError] = go(() => validateUserData(userData));
-  if (validationError) {
-    return [null, new Error('User data validation failed', { cause: validationError })] as const;
+  let [validatedData, err] = goSync(() => validateUserData(user));
+  if (err) {
+    return [null, new Error('User data validation failed', { cause: err })] as const;
   }
 
   return [validatedData, null] as const;
+}
+```
+
+## API Client Error Handling
+
+```typescript
+import { goFetch } from 'go-errors';
+
+class ApiClient {
+  constructor(private baseUrl: string, private token: string) {}
+
+  private async request<T>(endpoint: string) {
+    let [response, err] = await goFetch<T>(`${this.baseUrl}${endpoint}`, {
+      headers: {
+        'Authorization': `Bearer ${this.token}`
+      },
+      errorTransformer: (error) => {
+        if (error instanceof Response) {
+          return new ApiError(`HTTP_${error.status}`, error.statusText);
+        }
+        return new ApiError('NETWORK_ERROR', error instanceof Error ? error.message : 'Unknown error');
+      }
+    });
+
+    if (err) {
+      // Add request context to error
+      return [null, new Error(`API request failed: ${endpoint}`, { cause: err })] as const;
+    }
+
+    return [response, null] as const;
+  }
+
+  async getUser(id: string) {
+    let [user, err] = await this.request<User>(`/users/${id}`);
+    if (err) {
+      // Add operation context to error
+      return [null, new Error(`Failed to get user ${id}`, { cause: err })] as const;
+    }
+
+    return [user, null] as const;
+  }
+}
+
+// Usage
+const api = new ApiClient('https://api.example.com', 'token');
+let [user, err] = await api.getUser('123');
+if (err) {
+  console.error('Error chain:', err.cause?.cause?.message);
 }
 ```
 

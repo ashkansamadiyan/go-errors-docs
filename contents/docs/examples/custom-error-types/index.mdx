@@ -10,11 +10,15 @@ This page demonstrates how to use custom error types with go-errors.
 ## Basic Custom Errors
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 // Define custom error types
 class ValidationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
     super(message);
     this.name = 'ValidationError';
   }
@@ -29,23 +33,40 @@ class NetworkError extends Error {
 
 // Use custom error types
 function validateUser(user: unknown) {
-  const [result, error] = go<unknown, ValidationError>(() => {
+  let [result, err] = goSync<unknown, ValidationError>(() => {
     if (!user || typeof user !== 'object') {
-      throw new ValidationError('Invalid user object');
+      throw new ValidationError(
+        'Invalid user object',
+        'user',
+        user
+      );
     }
     return user;
   });
 
-  return [result, error] as const;
+  if (err) {
+    console.error(
+      `Validation failed: ${err.message}`,
+      `Field: ${err.field}`,
+      `Value: ${err.value}`
+    );
+  }
+
+  return [result, err] as const;
 }
 
 async function fetchUser(id: string) {
-  const [response, error] = await go<Response, NetworkError>(
-    fetch(`/api/users/${id}`)
-  );
+  let [response, err] = await goFetch<User, NetworkError>(`/api/users/${id}`, {
+    errorTransformer: (error) => {
+      if (error instanceof Error) {
+        return new NetworkError(`Failed to fetch user: ${error.message}`);
+      }
+      return new NetworkError('Unknown network error');
+    }
+  });
 
-  if (error) {
-    return [null, new NetworkError(`Failed to fetch user: ${error.message}`)] as const;
+  if (err) {
+    return [null, err] as const;
   }
 
   return [response, null] as const;
@@ -55,11 +76,15 @@ async function fetchUser(id: string) {
 ## Error Type Hierarchies
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 // Base error class
 class AppError extends Error {
-  constructor(message: string, public code: number) {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: unknown
+  ) {
     super(message);
     this.name = 'AppError';
   }
@@ -67,15 +92,15 @@ class AppError extends Error {
 
 // Specific error types
 class DatabaseError extends AppError {
-  constructor(message: string) {
-    super(message, 500);
+  constructor(message: string, details?: unknown) {
+    super(message, 'DATABASE_ERROR', details);
     this.name = 'DatabaseError';
   }
 }
 
 class AuthError extends AppError {
   constructor(message: string) {
-    super(message, 401);
+    super(message, 'AUTH_ERROR');
     this.name = 'AuthError';
   }
 }
@@ -83,17 +108,29 @@ class AuthError extends AppError {
 // Using error hierarchies
 async function getUserData(userId: string) {
   // Check authentication
-  const [session, authError] = go<Session, AuthError>(() => checkAuth());
-  if (authError) {
-    return [null, authError] as const;
+  let [session, err] = goSync<Session, AuthError>(() => checkAuth());
+  if (err) {
+    return [null, err] as const;
   }
 
   // Fetch user data
-  const [userData, dbError] = await go<UserData, DatabaseError>(
-    db.users.findById(userId)
-  );
-  if (dbError) {
-    return [null, dbError] as const;
+  let [userData, err] = await goFetch<UserData, DatabaseError>(`/api/users/${userId}`, {
+    headers: {
+      'Authorization': `Bearer ${session.token}`
+    },
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        return new DatabaseError(
+          'Database query failed',
+          { status: error.status, body: error.statusText }
+        );
+      }
+      return new DatabaseError('Unknown database error');
+    }
+  });
+
+  if (err) {
+    return [null, err] as const;
   }
 
   return [userData, null] as const;
@@ -101,14 +138,18 @@ async function getUserData(userId: string) {
 
 // Error handling
 async function handleRequest(userId: string) {
-  const [data, error] = await getUserData(userId);
+  let [data, err] = await getUserData(userId);
   
-  if (error) {
-    if (error instanceof AuthError) {
-      return { status: error.code, message: 'Authentication required' };
+  if (err) {
+    if (err instanceof AuthError) {
+      return { status: 401, message: 'Authentication required' };
     }
-    if (error instanceof DatabaseError) {
-      return { status: error.code, message: 'Internal server error' };
+    if (err instanceof DatabaseError) {
+      return { 
+        status: 500, 
+        message: 'Database error',
+        details: err.details
+      };
     }
     return { status: 500, message: 'Unknown error' };
   }
@@ -120,7 +161,7 @@ async function handleRequest(userId: string) {
 ## Error with Additional Context
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 interface ValidationContext {
   field: string;
@@ -139,7 +180,7 @@ class ValidationError extends Error {
 }
 
 function validateField(field: string, value: unknown, constraint: string) {
-  const [result, error] = go(() => {
+  let [result, err] = goSync(() => {
     if (!isValid(value, constraint)) {
       throw new ValidationError(
         `Validation failed for ${field}`,
@@ -149,21 +190,128 @@ function validateField(field: string, value: unknown, constraint: string) {
     return value;
   });
 
-  if (error instanceof ValidationError) {
+  if (err instanceof ValidationError) {
     console.error(
-      `Validation error: ${error.message}`,
-      `Field: ${error.context.field}`,
-      `Value: ${error.context.value}`,
-      `Constraint: ${error.context.constraint}`
+      `Validation error: ${err.message}`,
+      `Field: ${err.context.field}`,
+      `Value: ${err.context.value}`,
+      `Constraint: ${err.context.constraint}`
     );
   }
 
-  return [result, error] as const;
+  return [result, err] as const;
+}
+
+// Using with goFetch
+interface ApiError {
+  code: string;
+  message: string;
+  context?: unknown;
+}
+
+async function fetchUserData(userId: string) {
+  let [user, err] = await goFetch<User, ApiError>(`/api/users/${userId}`, {
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        return {
+          code: `HTTP_${error.status}`,
+          message: error.statusText,
+          context: { status: error.status }
+        };
+      }
+      if (error instanceof ValidationError) {
+        return {
+          code: 'VALIDATION_ERROR',
+          message: error.message,
+          context: error.context
+        };
+      }
+      return {
+        code: 'UNKNOWN_ERROR',
+        message: String(error)
+      };
+    }
+  });
+
+  if (err) {
+    console.error(`API Error: ${err.code}`, err.context);
+    return [null, err] as const;
+  }
+
+  return [user, null] as const;
+}
+```
+
+## Best Practices
+
+1. Always use `let` for result declarations:
+```typescript
+// ✅ Good: Using let
+let [value, err] = goSync(() => validate(input));
+if (err) return [null, err] as const;
+
+// ❌ Bad: Using const
+const [data, error] = goSync(() => validate(input));
+```
+
+2. Add meaningful context to errors:
+```typescript
+// ✅ Good: Rich error context
+class ValidationError extends Error {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
+    super(message);
+  }
+}
+
+// ❌ Bad: Just message
+throw new Error('Validation failed');
+```
+
+3. Use error hierarchies for better error handling:
+```typescript
+// ✅ Good: Error hierarchy
+class AppError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+  }
+}
+
+class ValidationError extends AppError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR');
+  }
+}
+
+// ❌ Bad: Flat error types
+class ValidationError extends Error {}
+class NetworkError extends Error {}
+```
+
+4. Transform errors consistently:
+```typescript
+// ✅ Good: Consistent error transformation
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => ({
+    code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error)
+  })
+});
+
+// ❌ Bad: Inconsistent error handling
+let [data, err] = await goFetch('/api/user');
+if (err instanceof Response) {
+  // Handle response error
+} else if (err instanceof Error) {
+  // Handle error
 }
 ```
 
 ## See Also
 
-- [Basic Usage](/docs/examples/basic-usage)
-- [Error Propagation](/docs/examples/error-propagation)
-- [Error Handling](/docs/api-reference/error-handling) 
+- [Error Handling](/docs/api-reference/error-handling)
+- [goFetch Function](/docs/api-reference/go-fetch)
+- [Basic Usage](/docs/examples/basic-usage) 

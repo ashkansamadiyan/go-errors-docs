@@ -1,6 +1,6 @@
 # HTTP Requests Guide
 
-This guide covers making HTTP requests using the go-errors library, focusing on the `goFetch` function and common HTTP patterns.
+This guide covers making HTTP requests using the go-errors library's powerful `goFetch` function, which provides type-safe API calls with built-in transformation capabilities.
 
 ## Basic HTTP Requests
 
@@ -10,54 +10,70 @@ This guide covers making HTTP requests using the go-errors library, focusing on 
 import { goFetch } from 'go-errors';
 
 // Simple GET request
-let [data, err] = await goFetch('https://api.example.com/data');
+let [data, err] = await goFetch('/api/data');
 if (err) {
   console.error('Failed to fetch:', err);
   return;
 }
 console.log('Got data:', data);
 
-// Typed GET request
+// Typed GET request with response transformation
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
 }
 
-let [user, err] = await goFetch<User>('https://api.example.com/user/1');
+let [user, err] = await goFetch<User>('/api/user/1', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
 if (err) {
   console.error('Failed to fetch user:', err);
   return;
 }
-console.log('User name:', user.name);
+console.log('User name:', user.fullName);
 ```
 
 ### POST Request
 
 ```typescript
 interface CreateUserRequest {
-  name: string;
+  firstName: string;
+  lastName: string;
   email: string;
 }
 
 interface CreateUserResponse {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
   createdAt: string;
 }
 
 let [newUser, err] = await goFetch<CreateUserResponse>(
-  'https://api.example.com/users',
+  '/api/users',
   {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      name: 'John Doe',
+      firstName: 'John',
+      lastName: 'Doe',
       email: 'john@example.com',
     } as CreateUserRequest),
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
   }
 );
 
@@ -79,20 +95,24 @@ const authHeaders = {
   'Content-Type': 'application/json',
 };
 
-let [data, err] = await goFetch<User>('https://api.example.com/me', {
+let [data, err] = await goFetch<User>('/api/me', {
   headers: authHeaders,
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
 });
 
 // Basic authentication
 const basicAuth = btoa(`${username}:${password}`);
-let [data, err] = await goFetch<User>('https://api.example.com/me', {
+let [data, err] = await goFetch<User>('/api/me', {
   headers: {
     'Authorization': `Basic ${basicAuth}`,
-  },
+  }
 });
 
 // Cookie-based authentication
-let [data, err] = await goFetch<User>('https://api.example.com/me', {
+let [data, err] = await goFetch<User>('/api/me', {
   credentials: 'include',  // Sends cookies
 });
 ```
@@ -111,7 +131,7 @@ function buildSearchUrl(params: SearchParams): string {
   searchParams.set('q', params.query);
   searchParams.set('page', params.page.toString());
   searchParams.set('limit', params.limit.toString());
-  return `https://api.example.com/search?${searchParams.toString()}`;
+  return `/api/search?${searchParams.toString()}`;
 }
 
 let [results, err] = await goFetch<SearchResults>(buildSearchUrl({
@@ -134,24 +154,29 @@ interface ApiResponse<T> {
 
 interface ApiUser {
   id: string;
-  user_name: string;
+  first_name: string;
+  last_name: string;
   email_address: string;
   created_at: string;
 }
 
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
   createdAt: Date;
 }
 
-let [user, err] = await goFetch<User>('https://api.example.com/user/1', {
+let [user, err] = await goFetch<User>('/api/user/1', {
   responseTransformer: (data: unknown): User => {
     const response = data as ApiResponse<ApiUser>;
     return {
       id: parseInt(response.data.id, 10),
-      name: response.data.user_name,
+      firstName: response.data.first_name,
+      lastName: response.data.last_name,
+      fullName: `${response.data.first_name} ${response.data.last_name}`,
       email: response.data.email_address,
       createdAt: new Date(response.data.created_at),
     };
@@ -163,7 +188,7 @@ let [user, err] = await goFetch<User>('https://api.example.com/user/1', {
 
 ```typescript
 interface ApiError {
-  code: number;
+  code: string;
   message: string;
   details?: {
     field: string;
@@ -172,11 +197,15 @@ interface ApiError {
 }
 
 let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  }),
   errorTransformer: (error: unknown): ApiError => {
     // Handle Response errors
     if (error instanceof Response) {
       return {
-        code: error.status,
+        code: `HTTP_${error.status}`,
         message: error.statusText,
       };
     }
@@ -184,23 +213,23 @@ let [data, err] = await goFetch<User, ApiError>('/api/user', {
     // Handle network errors
     if (error instanceof Error) {
       return {
-        code: 0,
+        code: 'NETWORK_ERROR',
         message: error.message,
       };
     }
 
     // Handle unknown errors
     return {
-      code: -1,
+      code: 'UNKNOWN_ERROR',
       message: 'Unknown error occurred',
     };
   },
 });
 
 if (err) {
-  if (err.code === 404) {
+  if (err.code === 'HTTP_404') {
     console.error('User not found');
-  } else if (err.code === 401) {
+  } else if (err.code === 'HTTP_401') {
     console.error('Unauthorized');
   } else {
     console.error(`Error ${err.code}: ${err.message}`);
@@ -214,16 +243,16 @@ if (err) {
 ### Retry Logic
 
 ```typescript
-async function fetchWithRetry<T>(
+async function fetchWithRetry<T, E = Error>(
   url: string,
-  options?: RequestInit,
+  options?: Parameters<typeof goFetch>[1],
   retries = 3,
   delay = 1000
-): Promise<Result<T, Error>> {
-  let lastError: Error | null = null;
+): Promise<Result<T, E>> {
+  let lastError: E | null = null;
 
   for (let i = 0; i < retries; i++) {
-    let [data, err] = await goFetch<T>(url, options);
+    let [data, err] = await goFetch<T, E>(url, options);
     if (!err) return [data, null] as const;
 
     lastError = err;
@@ -237,8 +266,13 @@ async function fetchWithRetry<T>(
 
 // Usage
 let [data, err] = await fetchWithRetry<User>(
-  'https://api.example.com/user/1',
-  undefined,
+  '/api/user/1',
+  {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  },
   3,
   1000
 );
@@ -248,63 +282,89 @@ let [data, err] = await fetchWithRetry<User>(
 
 ```typescript
 async function fetchUserProfile(userId: string) {
-  const [
-    [user, userErr],
-    [posts, postsErr],
-    [settings, settingsErr]
-  ] = await Promise.all([
-    goFetch<User>(`/api/users/${userId}`),
-    goFetch<Post[]>(`/api/users/${userId}/posts`),
-    goFetch<Settings>(`/api/users/${userId}/settings`)
+  // Fetch user data and posts in parallel
+  const [userPromise, postsPromise] = await Promise.all([
+    goFetch<User>(`/api/user/${userId}`, {
+      responseTransformer: (data) => ({
+        ...data,
+        fullName: `${data.firstName} ${data.lastName}`
+      })
+    }),
+    goFetch<Post[]>(`/api/user/${userId}/posts`)
   ]);
 
-  // Aggregate errors
-  const errors: Error[] = [];
-  if (userErr) errors.push(userErr);
-  if (postsErr) errors.push(postsErr);
-  if (settingsErr) errors.push(settingsErr);
+  let [user, userErr] = userPromise;
+  let [posts, postsErr] = postsPromise;
 
-  if (errors.length > 0) {
-    return [null, new AggregateError(errors, 'Failed to fetch profile')] as const;
+  if (userErr || postsErr) {
+    return [null, userErr || postsErr] as const;
   }
 
   return [{
     user,
-    posts,
-    settings
+    posts
   }, null] as const;
 }
 ```
 
-### Sequential Requests
+### API Client Pattern
 
 ```typescript
-async function createUserWithPreferences(
-  userData: CreateUserRequest,
-  preferences: UserPreferences
-) {
-  // Create user first
-  let [user, err] = await goFetch<User>('/api/users', {
-    method: 'POST',
-    body: JSON.stringify(userData),
-  });
-  if (err) return [null, err] as const;
+class ApiClient {
+  constructor(private baseUrl: string, private token: string) {}
 
-  // Then set preferences
-  let [prefs, err] = await goFetch<UserPreferences>(
-    `/api/users/${user.id}/preferences`,
-    {
-      method: 'PUT',
-      body: JSON.stringify(preferences),
-    }
-  );
-  if (err) return [null, err] as const;
+  private async request<T, E = ApiError>(
+    endpoint: string,
+    options?: Parameters<typeof goFetch>[1]
+  ): Promise<Result<T, E>> {
+    return goFetch<T, E>(`${this.baseUrl}${endpoint}`, {
+      ...options,
+      headers: {
+        ...options?.headers,
+        'Authorization': `Bearer ${this.token}`,
+      },
+      responseTransformer: (data) => {
+        const transformed = options?.responseTransformer?.(data) ?? data;
+        if ('firstName' in transformed && 'lastName' in transformed) {
+          return {
+            ...transformed,
+            fullName: `${transformed.firstName} ${transformed.lastName}`
+          };
+        }
+        return transformed;
+      },
+      errorTransformer: (error) => {
+        if (options?.errorTransformer) {
+          return options.errorTransformer(error);
+        }
+        return this.defaultErrorTransformer(error);
+      }
+    });
+  }
 
-  return [{
-    user,
-    preferences: prefs
-  }, null] as const;
+  private defaultErrorTransformer(error: unknown): ApiError {
+    // Default error transformation logic
+    return {
+      code: error instanceof Error ? 'INTERNAL_ERROR' : 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : 'Unknown error occurred'
+    };
+  }
+
+  async getUser(id: string): Promise<Result<User, ApiError>> {
+    return this.request<User>(`/user/${id}`);
+  }
+
+  async createUser(data: CreateUserRequest): Promise<Result<User, ApiError>> {
+    return this.request<User>('/user', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+  }
 }
+
+// Usage
+const api = new ApiClient('https://api.example.com', 'your-token');
+let [user, err] = await api.getUser('123');
 ```
 
 ## Best Practices

@@ -12,7 +12,7 @@ This page provides real-world examples of using go-errors in various scenarios. 
 ### Simple Error Handling
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 function divide(a: number, b: number): number {
   if (b === 0) throw new Error("Division by zero");
@@ -21,57 +21,57 @@ function divide(a: number, b: number): number {
 
 // Using go-errors
 function safeDivide(a: number, b: number) {
-  const [result, error] = go(() => divide(a, b));
-  if (error) {
-    console.log("Division failed:", error.message);
-    return [null, error] as const;
+  let [result, err] = goSync(() => divide(a, b));
+  if (err) {
+    console.log("Division failed:", err.message);
+    return [null, err] as const;
   }
   return [result, null] as const;
 }
 
 // Usage
-const [result1, error1] = safeDivide(10, 2);
+let [result1, err] = safeDivide(10, 2);
 console.log(result1); // 5
 
-const [result2, error2] = safeDivide(10, 0);
-console.log(error2?.message); // "Division by zero"
+let [result2, err] = safeDivide(10, 0);
+console.log(err?.message); // "Division by zero"
 ```
 
 ### API Calls
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
 
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
 }
 
 async function fetchUser(id: string) {
-  const [response, fetchError] = await go(
-    fetch(`https://api.example.com/users/${id}`)
-  );
+  let [user, err] = await goFetch<User>(`/api/users/${id}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
   
-  if (fetchError) {
-    return [null, fetchError] as const;
+  if (err) {
+    return [null, err] as const;
   }
   
-  const [data, parseError] = await go(response.json());
-  if (parseError) {
-    return [null, parseError] as const;
-  }
-  
-  return [data as User, null] as const;
+  return [user, null] as const;
 }
 
 // Usage
 async function displayUser(id: string) {
-  const [user, error] = await fetchUser(id);
-  if (error) {
-    console.error("Failed to fetch user:", error.message);
+  let [user, err] = await fetchUser(id);
+  if (err) {
+    console.error("Failed to fetch user:", err.message);
     return;
   }
-  console.log("User:", user.name);
+  console.log("User:", user.fullName);
 }
 ```
 
@@ -80,18 +80,25 @@ async function displayUser(id: string) {
 ### Custom Error Types
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 // Define custom error types
 class ValidationError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
     super(message);
     this.name = 'ValidationError';
   }
 }
 
 class DatabaseError extends Error {
-  constructor(message: string) {
+  constructor(
+    message: string,
+    public details?: unknown
+  ) {
     super(message);
     this.name = 'DatabaseError';
   }
@@ -100,40 +107,56 @@ class DatabaseError extends Error {
 // Function that might throw different types of errors
 function validateAndSaveUser(user: unknown) {
   // Validation
-  const [validUser, validationError] = go<User, ValidationError>(() => {
+  let [validUser, err] = goSync<User, ValidationError>(() => {
     if (typeof user !== 'object' || !user) {
-      throw new ValidationError('Invalid user object');
+      throw new ValidationError(
+        'Invalid user object',
+        'user',
+        user
+      );
     }
     return user as User;
   });
 
-  if (validationError) {
-    return [null, validationError] as const;
+  if (err) {
+    return [null, err] as const;
   }
 
   // Database operation
-  const [savedUser, dbError] = go<User, DatabaseError>(() => {
+  let [savedUser, err] = goSync<User, DatabaseError>(() => {
     // Simulate database operation
     if (Math.random() < 0.5) {
-      throw new DatabaseError('Database connection failed');
+      throw new DatabaseError(
+        'Database connection failed',
+        { timestamp: new Date() }
+      );
     }
     return validUser;
   });
 
-  if (dbError) {
-    return [null, dbError] as const;
+  if (err) {
+    return [null, err] as const;
   }
 
   return [savedUser, null] as const;
 }
 
 // Usage with type checking
-const [user, error] = validateAndSaveUser({});
-if (error) {
-  if (error instanceof ValidationError) {
-    console.log("Validation failed:", error.message);
-  } else if (error instanceof DatabaseError) {
-    console.log("Database error:", error.message);
+let [user, err] = validateAndSaveUser({});
+if (err) {
+  if (err instanceof ValidationError) {
+    console.error(
+      "Validation failed:",
+      err.message,
+      `Field: ${err.field}`,
+      `Value: ${err.value}`
+    );
+  } else if (err instanceof DatabaseError) {
+    console.error(
+      "Database error:",
+      err.message,
+      err.details
+    );
   }
 }
 ```
@@ -141,11 +164,13 @@ if (error) {
 ### Chaining Operations
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
 
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
 }
 
 interface Post {
@@ -156,16 +181,17 @@ interface Post {
 
 async function fetchUserWithPosts(userId: string) {
   // Fetch user
-  const [user, userError] = await go<User>(
-    fetch(`https://api.example.com/users/${userId}`).then(r => r.json())
-  );
-  if (userError) return [null, userError] as const;
+  let [user, err] = await goFetch<User>(`/api/users/${userId}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
+  if (err) return [null, err] as const;
 
   // Fetch user's posts
-  const [posts, postsError] = await go<Post[]>(
-    fetch(`https://api.example.com/users/${userId}/posts`).then(r => r.json())
-  );
-  if (postsError) return [null, postsError] as const;
+  let [posts, err] = await goFetch<Post[]>(`/api/users/${userId}/posts`);
+  if (err) return [null, err] as const;
 
   // Return combined data
   return [{
@@ -177,14 +203,14 @@ async function fetchUserWithPosts(userId: string) {
 
 // Usage with destructuring
 async function displayUserProfile(userId: string) {
-  const [data, error] = await fetchUserWithPosts(userId);
-  if (error) {
-    console.error("Failed to fetch profile:", error.message);
+  let [data, err] = await fetchUserWithPosts(userId);
+  if (err) {
+    console.error("Failed to fetch profile:", err.message);
     return;
   }
 
   const { user, posts } = data;
-  console.log(`User: ${user.name}`);
+  console.log(`User: ${user.fullName}`);
   console.log(`Posts: ${posts.length}`);
 }
 ```
@@ -192,24 +218,24 @@ async function displayUserProfile(userId: string) {
 ### File Operations
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 import { promises as fs } from 'fs';
 
 async function saveConfig(config: object, path: string) {
   // Convert to JSON
-  const [jsonString, stringifyError] = go(() => 
+  let [jsonString, err] = goSync(() => 
     JSON.stringify(config, null, 2)
   );
-  if (stringifyError) {
-    return [null, stringifyError] as const;
+  if (err) {
+    return [null, err] as const;
   }
 
   // Write to file
-  const [_, writeError] = await go(
+  let [_, err] = await goSync(() =>
     fs.writeFile(path, jsonString, 'utf-8')
   );
-  if (writeError) {
-    return [null, writeError] as const;
+  if (err) {
+    return [null, err] as const;
   }
 
   return [true, null] as const;
@@ -224,9 +250,9 @@ async function updateConfig() {
     }
   };
 
-  const [success, error] = await saveConfig(config, './config.json');
-  if (error) {
-    console.error("Failed to save config:", error.message);
+  let [success, err] = await saveConfig(config, './config.json');
+  if (err) {
+    console.error("Failed to save config:", err.message);
     return;
   }
   console.log("Config saved successfully");
@@ -236,22 +262,22 @@ async function updateConfig() {
 ### Retry Pattern
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
 
-async function withRetry<T>(
+async function withRetry<T, E = Error>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
   delay: number = 1000
-): Promise<[T, Error | null]> {
-  let lastError: Error | null = null;
+): Promise<Result<T, E>> {
+  let lastError: E | null = null;
 
   for (let i = 0; i < maxRetries; i++) {
-    const [result, error] = await go(operation());
-    if (!error) {
-      return [result, null];
+    let [result, err] = await goFetch<T, E>(operation);
+    if (!err) {
+      return [result, null] as const;
     }
     
-    lastError = error;
+    lastError = err;
     if (i < maxRetries - 1) {
       await new Promise(resolve => setTimeout(resolve, delay));
     }
@@ -262,12 +288,12 @@ async function withRetry<T>(
 
 // Usage
 async function fetchWithRetry(url: string) {
-  const [data, error] = await withRetry(
-    () => fetch(url).then(r => r.json())
+  let [data, err] = await withRetry(
+    () => goFetch(url)
   );
 
-  if (error) {
-    console.error("All retries failed:", error.message);
+  if (err) {
+    console.error("All retries failed:", err.message);
     return;
   }
 
@@ -278,8 +304,8 @@ async function fetchWithRetry(url: string) {
 ## Best Practices Demonstrated
 
 1. **Type Safety**
-   - Always use type parameters with `go`
-   - Use custom error types for better error handling
+   - Always use type parameters with `goSync` and `goFetch`
+   - Use custom error types with meaningful context
    - Use `as const` assertions for proper type inference
 
 2. **Error Propagation**
@@ -288,7 +314,7 @@ async function fetchWithRetry(url: string) {
    - Use appropriate error types for different scenarios
 
 3. **Async Operations**
-   - Handle Promise rejections consistently
+   - Use `goFetch` for HTTP requests
    - Chain async operations safely
    - Implement retry patterns when needed
 
@@ -296,6 +322,11 @@ async function fetchWithRetry(url: string) {
    - Keep error handling separate from business logic
    - Use meaningful error types and messages
    - Implement reusable error handling patterns
+
+5. **Variable Declarations**
+   - Always use `let` for result declarations
+   - Reuse error variable names (typically `err`)
+   - Follow Go-style conventions
 
 ## See Also
 
