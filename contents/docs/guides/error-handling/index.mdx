@@ -80,7 +80,7 @@ async function fetchUserData(userId: string) {
     }
   });
 
-  if (err) {
+if (err) {
     console.error(`Failed to fetch user: ${err.code}`, err.message);
     return [null, err] as const;
   }
@@ -127,7 +127,7 @@ function validateUser(user: unknown) {
   }
 
   return [result, null] as const;
-}
+  }
 ```
 
 ### Error Hierarchies
@@ -155,7 +155,7 @@ class AuthError extends AppError {
   constructor(message: string) {
     super(message, 'AUTH_ERROR');
     this.name = 'AuthError';
-  }
+    }
 }
 ```
 
@@ -172,10 +172,10 @@ async function getUserData(userId: string) {
       'USER_FETCH_ERROR',
       { userId, cause: err }
     )] as const;
-  }
+}
 
   let [validated, err] = goSync(() => validateUser(user));
-  if (err) {
+if (err) {
     return [null, new AppError(
       'User validation failed',
       'USER_VALIDATION_ERROR',
@@ -199,13 +199,13 @@ let [data, err] = await goFetch<User, ApiError>('/api/user', {
         details: { status: error.status }
       };
     }
-    if (error instanceof ValidationError) {
-      return {
+  if (error instanceof ValidationError) {
+    return {
         code: 'VALIDATION_ERROR',
         message: error.message,
         details: { field: error.field, value: error.value }
-      };
-    }
+    };
+  }
     return {
       code: 'UNKNOWN_ERROR',
       message: String(error)
@@ -280,7 +280,7 @@ if (err instanceof Response) {
 } else if (err instanceof Error) {
   // Handle error
 }
-```
+   ```
 
 ## See Also
 

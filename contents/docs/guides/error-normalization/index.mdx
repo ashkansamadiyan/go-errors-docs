@@ -1,0 +1,168 @@
+---
+title: Error Normalization
+description: Understanding how go-errors handles and normalizes different types of errors
+---
+
+# Error Normalization
+
+go-errors provides powerful error normalization capabilities that handle various types of thrown values and convert them into proper Error objects. This guide explains how error normalization works and how to use it effectively.
+
+## Basic Concepts
+
+### Automatic Error Normalization
+
+```typescript
+import { goSync } from 'go-errors';
+
+// Strings become Error objects
+let [value, err] = goSync(() => {
+  throw "Invalid input";  // String error
+});
+console.log(err instanceof Error); // true
+console.log(err.message); // "Invalid input"
+
+// Objects are JSON stringified
+let [value, err] = goSync(() => {
+  throw { code: 'NOT_FOUND', details: { id: 123 } };
+});
+console.log(err.message); // '{"code":"NOT_FOUND","details":{"id":123}}'
+```
+
+## Special Cases
+
+### Regular Expressions and Circular References
+
+```typescript
+// RegExp objects become strings
+let [value, err] = goSync(() => {
+  throw /invalid pattern/gi;
+});
+console.log(err.message); // "/invalid pattern/gi"
+
+// Circular references are handled
+let [value, err] = goSync(() => {
+  const circular: any = { name: 'test' };
+  circular.self = circular;
+  throw circular;
+});
+console.log(err.message); // "Circular structure detected"
+```
+
+### Error Objects
+
+```typescript
+class ValidationError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+// Custom errors are preserved
+let [value, err] = goSync<string, ValidationError>(() => {
+  throw new ValidationError('email', 'Invalid email');
+});
+console.log(err instanceof ValidationError); // true
+console.log(err.field); // "email"
+```
+
+## Error Transformation
+
+### HTTP Error Transformation
+
+```typescript
+interface ApiError {
+  code: string;
+  message: string;
+}
+
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+});
+```
+
+### Error Context
+
+```typescript
+class ContextualError extends Error {
+  constructor(
+    message: string,
+    public context: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'ContextualError';
+  }
+}
+
+function withContext<T, E extends Error>(
+  result: [T, null] | [null, E],
+  context: Record<string, unknown>
+): [T, null] | [null, ContextualError] {
+  const [value, error] = result;
+  if (error) {
+    return [null, new ContextualError(
+      error.message,
+      { originalError: error, ...context }
+    )] as const;
+  }
+  return [value, null] as const;
+}
+```
+
+## Best Practices
+
+1. **Use Specific Error Types**
+```typescript
+// ✅ Good: Specific error types
+class NotFoundError extends Error {
+  constructor(resource: string, id: string) {
+    super(`${resource} with id ${id} not found`);
+    this.name = 'NotFoundError';
+  }
+}
+
+// ❌ Bad: Generic errors
+throw new Error('Not found');
+```
+
+2. **Preserve Error Context**
+```typescript
+// ✅ Good: Rich error context
+class DatabaseError extends Error {
+  constructor(
+    operation: string,
+    details: Record<string, unknown>,
+    cause?: Error
+  ) {
+    super(`Database ${operation} failed`);
+    this.name = 'DatabaseError';
+    Object.assign(this, { details, cause });
+  }
+}
+```
+
+3. **Transform Errors Consistently**
+```typescript
+// ✅ Good: Consistent transformation
+const errorTransformer = (error: unknown): ApiError => ({
+  code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+  message: error instanceof Error ? error.message : String(error)
+});
+```
+
+## See Also
+
+- [Error Handling](/docs/guides/error-handling) - Core error handling patterns
+- [Type Safety](/docs/guides/type-safety) - Type safety with errors
+- [Best Practices](/docs/guides/best-practices) - General best practices 

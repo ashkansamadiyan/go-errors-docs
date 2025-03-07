@@ -58,16 +58,25 @@ async function parseMdx<Frontmatter>(rawMdx: string) {
     options: {
       parseFrontmatter: true,
       mdxOptions: {
+        format: 'mdx',
+        development: process.env.NODE_ENV === 'development',
         rehypePlugins: [
           preProcess,
           rehypeCodeTitles,
-          rehypeCodeTitlesWithLogo,
-          rehypePrism,
+          [rehypePrism, { showLineNumbers: true }],
           rehypeSlug,
-          rehypeAutolinkHeadings,
+          [rehypeAutolinkHeadings, {
+            behavior: 'wrap',
+            properties: {
+              className: ['anchor']
+            }
+          }],
           postProcess,
         ],
-        remarkPlugins: [remarkGfm],
+        remarkPlugins: [
+          remarkGfm,
+          // Add any other remark plugins you need
+        ],
       },
     },
     components,
@@ -83,7 +92,7 @@ export type BaseMdxFrontmatter = {
 
 export async function getDocsForSlug(slug: string) {
   try {
-    const contentPath = getDocsContentPath(slug);
+    const contentPath = await getDocsContentPath(slug);
     const rawMdx = await fs.readFile(contentPath, "utf-8");
     return await parseMdx<BaseMdxFrontmatter>(rawMdx);
   } catch (err) {
@@ -92,7 +101,7 @@ export async function getDocsForSlug(slug: string) {
 }
 
 export async function getDocsTocs(slug: string) {
-  const contentPath = getDocsContentPath(slug);
+  const contentPath = await getDocsContentPath(slug);
   const rawMdx = await fs.readFile(contentPath, "utf-8");
   // captures between ## - #### can modify accordingly
   const headingsRegex = /^(#{2,4})\s(.+)$/gm;
@@ -124,8 +133,28 @@ function sluggify(text: string) {
   return slug.replace(/[^a-z0-9-]/g, "");
 }
 
-function getDocsContentPath(slug: string) {
-  return path.join(process.cwd(), "/contents/docs/", `${slug}/index.mdx`);
+async function getDocsContentPath(slug: string) {
+  const basePath = path.join(process.cwd(), "/contents/docs/");
+  
+  // Remove any leading /docs/ from the slug
+  const cleanSlug = slug.replace(/^docs\//, '');
+  
+  // Try the index.mdx structure first
+  const indexPath = path.join(basePath, cleanSlug, "index.mdx");
+  const directPath = path.join(basePath, `${cleanSlug}.mdx`);
+  
+  try {
+    await fs.access(indexPath);
+    return indexPath;
+  } catch {
+    try {
+      await fs.access(directPath);
+      return directPath;
+    } catch {
+      // If neither exists, return the original path to maintain existing error handling
+      return indexPath;
+    }
+  }
 }
 
 function justGetFrontmatterFromMD<Frontmatter>(rawMd: string): Frontmatter {
@@ -136,31 +165,53 @@ export async function getAllChilds(pathString: string) {
   const items = pathString.split("/").filter((it) => it != "");
   let page_routes_copy = ROUTES;
 
-  let prevHref = "";
+  // Find the current route section
+  let currentRoute = null;
   for (const it of items) {
-    const found = page_routes_copy.find((innerIt) => innerIt.href == `/${it}`);
-    if (!found) break;
-    prevHref += found.href;
-    page_routes_copy = found.items ?? [];
+    currentRoute = page_routes_copy.find((innerIt) => {
+      const routePath = innerIt.href.replace(/^\/docs\//, '');
+      return routePath === it || routePath.split('/')[0] === it;
+    });
+    if (!currentRoute) break;
+    page_routes_copy = currentRoute.items ?? [];
   }
-  if (!prevHref) return [];
+  
+  if (!currentRoute) return [];
 
   return await Promise.all(
-    page_routes_copy.map(async (it) => {
-      const totalPath = path.join(
-        process.cwd(),
-        "/contents/docs/",
-        prevHref,
-        it.href,
-        "index.mdx",
-      );
-      const raw = await fs.readFile(totalPath, "utf-8");
+    (currentRoute.items ?? []).map(async (it) => {
+      // Build the correct path relative to the current section
+      const sectionPath = currentRoute.href.replace(/^\/docs\//, '');
+      const itemPath = it.href.replace(/^\//, '');
+      const fullPath = path.join(sectionPath, itemPath);
+
+      // Try both index.mdx and direct .mdx paths
+      const basePath = path.join(process.cwd(), "/contents/docs/");
+      const indexPath = path.join(basePath, fullPath, "index.mdx");
+      const directPath = path.join(basePath, `${fullPath}.mdx`);
+      
+      let raw;
+      try {
+        await fs.access(indexPath);
+        raw = await fs.readFile(indexPath, "utf-8");
+      } catch {
+        try {
+          await fs.access(directPath);
+          raw = await fs.readFile(directPath, "utf-8");
+        } catch {
+          console.warn(`Neither ${indexPath} nor ${directPath} exists`);
+          return null;
+        }
+      }
+
+      if (!raw) return null;
+
       return {
         ...justGetFrontmatterFromMD<BaseMdxFrontmatter>(raw),
-        href: `/docs${prevHref}${it.href}`,
+        href: `/docs/${fullPath}`,
       };
     }),
-  );
+  ).then(results => results.filter(Boolean));
 }
 
 // for copying the code in pre

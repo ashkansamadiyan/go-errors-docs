@@ -115,7 +115,7 @@ async function fetchUserData(userId: string) {
           code: `HTTP_${error.status}`,
           message: error.statusText
         };
-      }
+  }
       return {
         code: 'UNKNOWN_ERROR',
         message: error instanceof Error ? error.message : 'Unknown error'

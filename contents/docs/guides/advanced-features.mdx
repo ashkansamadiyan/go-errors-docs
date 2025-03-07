@@ -268,7 +268,7 @@ async function withRetry<T, E = Error>(
     }
 
     if (attempt < options.maxRetries - 1) {
-      await new Promise(resolve => setTimeout(resolve, delay));
+    await new Promise(resolve => setTimeout(resolve, delay));
       delay = Math.min(delay * options.backoffFactor, options.maxDelay);
     }
   }
@@ -281,17 +281,17 @@ async function fetchWithRetry<T>(url: string) {
   return withRetry<T>(
     () => goFetch<T>(url),
     {
-      maxRetries: 3,
-      initialDelay: 1000,
-      maxDelay: 5000,
-      backoffFactor: 2,
-      shouldRetry: (error) => {
+  maxRetries: 3,
+  initialDelay: 1000,
+  maxDelay: 5000,
+  backoffFactor: 2,
+  shouldRetry: (error) => {
         if (error instanceof Response) {
           // Retry on network errors or 5xx server errors
           return error.status >= 500;
         }
         return true;
-      },
+  },
     }
   );
 }

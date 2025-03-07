@@ -94,14 +94,14 @@ class ValidationError extends Error {
 
 function validateUser(user: unknown) {
   let [result, err] = goSync<unknown, ValidationError>(() => {
-    if (typeof user !== 'object' || !user) {
+  if (typeof user !== 'object' || !user) {
       throw new ValidationError(
         'Invalid user object',
         'user',
         user
       );
-    }
-    return user;
+  }
+  return user;
   });
 
   if (err) {

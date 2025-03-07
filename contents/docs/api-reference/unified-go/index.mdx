@@ -1,0 +1,172 @@
+---
+title: "The Unified go Function"
+description: "Understanding the unified go function and when to use it"
+---
+
+# The Unified `go` Function
+
+The `go` function is a powerful unified interface that handles both synchronous and asynchronous operations. This guide explains how it works and when to use it versus the specialized functions.
+
+## Overview
+
+```typescript
+// Function signatures
+function go<T, E = Error>(fn: () => T): Result<T, E>;
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+```
+
+The `go` function provides:
+- Unified error handling for sync and async code
+- Automatic type inference
+- Consistent return type patterns
+
+## Synchronous Usage
+
+```typescript
+// Synchronous operation
+let [value, err] = go(() => {
+  if (Math.random() > 0.5) throw new Error('Bad luck!');
+  return 42;
+});
+
+if (err) {
+  console.error('Failed:', err.message);
+} else {
+  console.log('Got value:', value); // 42
+}
+```
+
+## Asynchronous Usage
+
+```typescript
+// Asynchronous operation
+let [data, err] = await go(fetch('/api/data'));
+
+if (err) {
+  console.error('Fetch failed:', err.message);
+} else {
+  console.log('Got data:', data);
+}
+```
+
+## Type Inference
+
+### Synchronous Type Inference
+
+```typescript
+// Return type inference
+let [num, err] = go(() => 42);
+// num is inferred as number | null
+// err is inferred as Error | null
+
+// Error type inference
+class ValidationError extends Error {}
+let [value, err] = go<string, ValidationError>(() => {
+  throw new ValidationError('Invalid input');
+});
+// err is inferred as ValidationError | null
+```
+
+### Asynchronous Type Inference
+
+```typescript
+// Promise return type inference
+let [data, err] = await go(Promise.resolve({ id: 1 }));
+// data is inferred as { id: number } | null
+
+// Promise error type inference
+interface ApiError {
+  code: string;
+  message: string;
+}
+
+let [user, err] = await go<User, ApiError>(fetchUser());
+// err is inferred as ApiError | null
+```
+
+## When to Use Each Function
+
+### Using the Unified `go`
+
+```typescript
+// ✅ Good: When you want flexibility
+function process<T>(input: T | Promise<T>) {
+  return go(input);  // Works with both sync and async
+}
+
+// ✅ Good: When the operation type might change
+let operation = async ? fetchData() : getData();
+let result = go(operation);  // Type-safe for both cases
+```
+
+### Using Specialized Functions
+
+```typescript
+// ✅ Good: Using goSync for known sync operations
+let [value, err] = goSync(() => validateData(input));
+
+// ✅ Good: Using goAsync for known async operations
+let [data, err] = await goAsync(fetchData());
+
+// ✅ Good: Using goFetch for HTTP requests
+let [user, err] = await goFetch<User>('/api/user');
+```
+
+### Performance Considerations
+
+```typescript
+// ❌ Bad: Unnecessary async overhead
+let [value, err] = await go(() => syncOperation());  // Don't use go for known sync
+
+// ✅ Good: Direct sync handling
+let [value, err] = goSync(() => syncOperation());
+
+// ❌ Bad: Missing HTTP features
+let [data, err] = await go(fetch('/api/data'));  // Don't use go for HTTP
+
+// ✅ Good: Using goFetch features
+let [data, err] = await goFetch('/api/data', {
+  responseTransformer: (data) => transform(data)
+});
+```
+
+## Best Practices
+
+1. **Choose the Right Function**
+```typescript
+// ✅ Good: Use specialized functions when operation type is known
+let [value, err] = goSync(() => validate(input));
+let [data, err] = await goFetch('/api/data');
+
+// ❌ Bad: Using go when operation type is known
+let [value, err] = go(() => validate(input));
+```
+
+2. **Type Parameters**
+```typescript
+// ✅ Good: Explicit error types
+let [value, err] = go<number, ValidationError>(() => validate(input));
+
+// ❌ Bad: Relying on default Error type when specific errors exist
+let [value, err] = go(() => validate(input));
+```
+
+3. **Error Handling**
+```typescript
+// ✅ Good: Early returns with type safety
+let [data, err] = await go(fetchData());
+if (err) return [null, err] as const;
+
+// ❌ Bad: Nested error handling
+if (!err) {
+  // Handle success
+} else {
+  // Handle error
+}
+```
+
+## See Also
+
+- [goSync Function](/docs/api-reference/core-functions#gosync) - Synchronous operations
+- [goAsync Function](/docs/api-reference/core-functions#goasync) - Asynchronous operations
+- [goFetch Function](/docs/api-reference/go-fetch) - HTTP operations 
