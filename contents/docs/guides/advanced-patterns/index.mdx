@@ -19,13 +19,13 @@ function mapResult<T, U, E>(
 ): [U, null] | [null, E] {
   const [value, error] = result;
   if (error) return [null, error];
-  return [fn(value), null];
+  return [fn(value), null] as const;
 }
 
 // Usage
-const [num, error] = go(() => "42");
-const [parsed, parseError] = mapResult(
-  [num, error],
+let [num, err] = goSync(() => "42");
+let [parsed, err] = mapResult(
+  [num, err],
   value => parseInt(value, 10)
 );
 ```
@@ -46,24 +46,30 @@ function chainResult<T, U, E>(
 // Usage
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
 }
 
 async function fetchUserById(id: number): Promise<[User, null] | [null, Error]> {
-  const [response, error] = await go(fetch(`/api/users/${id}`));
-  if (error) return [null, error];
-  
-  return go(response.json());
+  let [user, err] = await goFetch<User>(`/api/users/${id}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  });
+  if (err) return [null, err] as const;
+  return [user, null] as const;
 }
 
 async function getUserPosts(user: User): Promise<[Post[], null] | [null, Error]> {
-  return go(fetch(`/api/users/${user.id}/posts`).then(r => r.json()));
+  return goFetch<Post[]>(`/api/users/${user.id}/posts`);
 }
 
 // Chain operations
-const [user, userError] = await fetchUserById(123);
-const [posts, postsError] = await chainResult(
-  [user, userError],
+let [user, err] = await fetchUserById(123);
+let [posts, err] = await chainResult(
+  [user, err],
   getUserPosts
 );
 ```
@@ -85,7 +91,7 @@ async function processAll<T, E = Error>(
   operations: (() => Promise<T>)[]
 ): Promise<[T[], null] | [null, AggregateError]> {
   const results = await Promise.all(
-    operations.map(op => go(op()))
+    operations.map(op => goFetch(op()))
   );
   
   const errors = results
@@ -93,26 +99,26 @@ async function processAll<T, E = Error>(
     .filter((error): error is E => error !== null);
   
   if (errors.length > 0) {
-    return [null, new AggregateError(errors)];
+    return [null, new AggregateError(errors)] as const;
   }
   
   const values = results
     .map(([value]) => value)
     .filter((value): value is T => value !== null);
   
-  return [values, null];
+  return [values, null] as const;
 }
 
 // Usage
-const [results, error] = await processAll([
+let [results, err] = await processAll([
   () => fetchUser(1),
   () => fetchUser(2),
   () => fetchUser(3)
 ]);
 
-if (error) {
-  console.log(`${error.errors.length} operations failed`);
-  error.errors.forEach(e => console.error(e));
+if (err) {
+  console.log(`${err.errors.length} operations failed`);
+  err.errors.forEach(e => console.error(e));
 }
 ```
 
@@ -124,9 +130,9 @@ function withFallback<T, E>(
   operation: () => T,
   fallback: T
 ): [T, null] {
-  const [value, error] = go(operation);
-  if (error) return [fallback, null];
-  return [value, null];
+  let [value, err] = goSync(operation);
+  if (err) return [fallback, null] as const;
+  return [value, null] as const;
 }
 
 // Helper for recovery functions
@@ -134,17 +140,17 @@ async function withRecovery<T, E>(
   operation: () => Promise<T>,
   recover: (error: E) => Promise<T>
 ): Promise<[T, null] | [null, E]> {
-  const [value, error] = await go(operation());
-  if (error) {
-    const [recovered, recoverError] = await go(recover(error));
-    if (recoverError) return [null, recoverError];
-    return [recovered, null];
+  let [value, err] = await goFetch(operation);
+  if (err) {
+    let [recovered, recoverErr] = await goFetch(recover(err));
+    if (recoverErr) return [null, recoverErr] as const;
+    return [recovered, null] as const;
   }
-  return [value, null];
+  return [value, null] as const;
 }
 
 // Usage
-const [config, configError] = await withRecovery(
+let [config, err] = await withRecovery(
   () => fetchConfig(),
   async (error) => {
     console.log("Using cached config due to error:", error);
@@ -179,25 +185,28 @@ function addErrorContext<T, E extends Error>(
       error.message,
       context,
       error
-    )];
+    )] as const;
   }
-  return [value, null];
+  return [value, null] as const;
 }
 
 // Usage
 async function processOrder(orderId: string) {
-  const [order, orderError] = await go(fetchOrder(orderId));
-  if (orderError) {
+  let [order, err] = await goFetch<Order>(`/api/orders/${orderId}`);
+  if (err) {
     return addErrorContext(
-      [null, orderError],
+      [null, err],
       { orderId, operation: 'fetchOrder' }
     );
   }
 
-  const [processed, processError] = await go(processOrderItems(order));
-  if (processError) {
+  let [processed, err] = await goFetch<ProcessedOrder>('/api/process', {
+    method: 'POST',
+    body: JSON.stringify(order)
+  });
+  if (err) {
     return addErrorContext(
-      [null, processError],
+      [null, err],
       { orderId, items: order.items.length }
     );
   }
@@ -220,12 +229,12 @@ async function using<T extends Disposable, R>(
   fn: (resource: T) => Promise<R>
 ): Promise<[R, null] | [null, Error]> {
   try {
-    const [result, error] = await go(fn(resource));
-    await go(resource.dispose());
-    return [result, error];
+    let [result, err] = await goFetch(fn(resource));
+    await goFetch(resource.dispose());
+    return [result, err] as const;
   } catch (e) {
-    await go(resource.dispose());
-    return [null, e as Error];
+    await goFetch(resource.dispose());
+    return [null, e as Error] as const;
   }
 }
 
@@ -240,11 +249,12 @@ class DatabaseConnection implements Disposable {
   }
 }
 
-const [results, error] = await using(
+let [results, err] = await using(
   new DatabaseConnection(),
   async (db) => {
-    const [rows] = await go(db.query("SELECT * FROM users"));
-    return rows;
+    let [rows, err] = await goFetch(db.query("SELECT * FROM users"));
+    if (err) return [null, err] as const;
+    return [rows, null] as const;
   }
 );
 ```
@@ -267,10 +277,10 @@ async function processWithLimit<T, R>(
     const batch = items.slice(i, i + limit);
     const batchResults = await Promise.all(
       batch.map(async item => {
-        const [result, error] = await go(operation(item));
-        if (error) {
-          errors.push(error);
-          return error;
+        let [result, err] = await goFetch(operation(item));
+        if (err) {
+          errors.push(err);
+          return err;
         }
         return result;
       })
@@ -279,80 +289,82 @@ async function processWithLimit<T, R>(
   }
   
   if (errors.length > 0) {
-    return [null, new AggregateError(errors)];
+    return [null, new AggregateError(errors)] as const;
   }
   
-  return [results.filter((r): r is R => !(r instanceof Error)), null];
+  return [results.filter((r): r is R => !(r instanceof Error)), null] as const;
 }
 
 // Usage
-const [processed, error] = await processWithLimit(
+let [processed, err] = await processWithLimit(
   userIds,
   async (id) => {
-    const [user] = await go(fetchUser(id));
-    return user;
+    let [user, err] = await goFetch<User>(`/api/users/${id}`);
+    if (err) return [null, err] as const;
+    return [user, null] as const;
   },
   5 // Process 5 at a time
 );
 ```
 
-### Timeout Pattern
+### Retry Pattern
 
 ```typescript
-function withTimeout<T>(
+interface RetryOptions {
+  maxRetries: number;
+  initialDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+  shouldRetry?: (error: unknown) => boolean;
+}
+
+async function withRetry<T, E = Error>(
   operation: () => Promise<T>,
-  ms: number
-): Promise<[T, null] | [null, Error]> {
-  return go(Promise.race([
-    operation(),
-    new Promise<T>((_, reject) => 
-      setTimeout(() => reject(new Error(`Operation timed out after ${ms}ms`)), ms)
-    )
-  ]));
+  options: RetryOptions
+): Promise<[T, null] | [null, E]> {
+  let delay = options.initialDelay;
+  let lastError: E | null = null;
+
+  for (let attempt = 0; attempt < options.maxRetries; attempt++) {
+    let [result, err] = await goFetch<T, E>(operation);
+    if (!err) {
+      return [result, null] as const;
+    }
+
+    lastError = err;
+    if (options.shouldRetry && !options.shouldRetry(err)) {
+      break;
+    }
+
+    if (attempt < options.maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay = Math.min(delay * options.backoffFactor, options.maxDelay);
+    }
+  }
+
+  return [null, lastError] as const;
 }
 
 // Usage
-const [result, error] = await withTimeout(
-  () => fetchLargeDataset(),
-  5000 // 5 second timeout
-);
-```
-
-## Testing Patterns
-
-### Error Simulation
-
-```typescript
-// Error generator for testing
-function createErrorGenerator<E extends Error>(
-  ErrorClass: new (...args: any[]) => E,
-  probability: number
-) {
-  return function <T>(value: T): [T, null] | [null, E] {
-    if (Math.random() < probability) {
-      return [null, new ErrorClass("Simulated error")];
+let [data, err] = await withRetry(
+  () => fetchData(),
+  {
+    maxRetries: 3,
+    initialDelay: 1000,
+    maxDelay: 5000,
+    backoffFactor: 2,
+    shouldRetry: (error) => {
+      if (error instanceof Response) {
+        return error.status >= 500; // Retry on server errors
+      }
+      return true; // Retry on network errors
     }
-    return [value, null];
-  };
-}
-
-// Usage in tests
-describe('error handling', () => {
-  it('should handle network errors', async () => {
-    const failingFetch = createErrorGenerator(NetworkError, 1.0);
-    
-    const [data, error] = await go(failingFetch(
-      fetch('https://api.example.com')
-    ));
-    
-    expect(error).toBeInstanceOf(NetworkError);
-  });
-});
+  }
+);
 ```
 
 ## See Also
 
-- [Best Practices](/docs/guides/best-practices)
-- [API Reference](/docs/api-reference)
-- [Examples](/docs/examples)
-- [Core Concepts](/docs/getting-started/core-concepts) 
+- [Error Handling](/docs/guides/error-handling)
+- [Type Safety](/docs/guides/type-safety)
+- [Best Practices](/docs/guides/best-practices) 

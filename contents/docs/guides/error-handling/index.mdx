@@ -1,3 +1,8 @@
+---
+title: Error Handling Patterns
+description: Learn common error handling patterns and best practices
+---
+
 # Error Handling Patterns
 
 This guide covers common error handling patterns and best practices when using the go-errors library.
@@ -5,20 +10,21 @@ This guide covers common error handling patterns and best practices when using t
 ## Core Principles
 
 1. **Early Returns**: Check for errors immediately and return early
-2. **Error Propagation**: Pass errors up the call stack
-3. **Type Safety**: Use custom error types for better error handling
+2. **Error Propagation**: Pass errors up the call stack with context
+3. **Type Safety**: Use custom error types with meaningful context
 4. **Immutability**: Results are readonly tuples
 5. **Consistency**: Use `let` for declarations and reuse error variables
+6. **Error Context**: Preserve error context when propagating
 
 ## Basic Patterns
 
 ### Synchronous Error Handling
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 function divide(a: number, b: number) {
-  let [result, err] = go(() => {
+  let [result, err] = goSync(() => {
     if (b === 0) throw new Error('Division by zero');
     return a / b;
   });
@@ -30,292 +36,254 @@ function divide(a: number, b: number) {
 // Usage
 let [value, err] = divide(10, 2);
 if (err) {
-  console.error('Division failed:', err);
+  console.error('Division failed:', err.message);
   return;
 }
 console.log('Result:', value);
 ```
 
-### Asynchronous Error Handling
+### HTTP Error Handling
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
+
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
+interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
 
 async function fetchUserData(userId: string) {
-  let [response, err] = await go(fetch(`/api/users/${userId}`));
-  if (err) return [null, err] as const;
+  let [user, err] = await goFetch<User, ApiError>(`/api/users/${userId}`, {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    }),
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        return {
+          code: `HTTP_${error.status}`,
+          message: error.statusText
+        };
+      }
+      return {
+        code: 'UNKNOWN_ERROR',
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
 
-  let [data, err] = await go(response.json());
-  if (err) return [null, err] as const;
+  if (err) {
+    console.error(`Failed to fetch user: ${err.code}`, err.message);
+    return [null, err] as const;
+  }
 
-  return [data, null] as const;
+  return [user, null] as const;
 }
-
-// Usage
-let [user, err] = await fetchUserData('123');
-if (err) {
-  console.error('Failed to fetch user:', err);
-  return;
-}
-console.log('User:', user);
 ```
 
-## Advanced Patterns
+## Error Types
 
 ### Custom Error Types
 
 ```typescript
-// Define custom error types
 class ValidationError extends Error {
-  constructor(public field: string, message: string) {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
     super(message);
     this.name = 'ValidationError';
   }
 }
 
-class NotFoundError extends Error {
-  constructor(resource: string) {
-    super(`${resource} not found`);
-    this.name = 'NotFoundError';
-  }
-}
-
-// Use custom errors in functions
-function validateUser(user: User) {
-  let [valid, err] = go<boolean, ValidationError>(() => {
-    if (!user.name) {
-      throw new ValidationError('name', 'Name is required');
+function validateUser(user: unknown) {
+  let [result, err] = goSync<unknown, ValidationError>(() => {
+    if (!user || typeof user !== 'object') {
+      throw new ValidationError(
+        'Invalid user object',
+        'user',
+        user
+      );
     }
-    if (!user.email) {
-      throw new ValidationError('email', 'Email is required');
-    }
-    return true;
+    return user;
   });
 
-  return [valid, err] as const;
+  if (err) {
+    console.error(
+      `Validation failed: ${err.message}`,
+      `Field: ${err.field}`,
+      `Value: ${err.value}`
+    );
+    return [null, err] as const;
+  }
+
+  return [result, null] as const;
+}
+```
+
+### Error Hierarchies
+
+```typescript
+class AppError extends Error {
+  constructor(
+    message: string,
+    public code: string,
+    public details?: unknown
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
 }
 
-// Handle specific error types
-let [isValid, err] = validateUser(user);
-if (err) {
-  if (err instanceof ValidationError) {
-    console.error(`Validation failed for ${err.field}: ${err.message}`);
-  } else {
-    console.error('Unknown error:', err);
+class DatabaseError extends AppError {
+  constructor(message: string, details?: unknown) {
+    super(message, 'DATABASE_ERROR', details);
+    this.name = 'DatabaseError';
   }
-  return;
+}
+
+class AuthError extends AppError {
+  constructor(message: string) {
+    super(message, 'AUTH_ERROR');
+    this.name = 'AuthError';
+  }
+}
+```
+
+## Error Propagation
+
+### With Context
+
+```typescript
+async function getUserData(userId: string) {
+  let [user, err] = await goFetch<User>(`/api/users/${userId}`);
+  if (err) {
+    return [null, new AppError(
+      'Failed to fetch user data',
+      'USER_FETCH_ERROR',
+      { userId, cause: err }
+    )] as const;
+  }
+
+  let [validated, err] = goSync(() => validateUser(user));
+  if (err) {
+    return [null, new AppError(
+      'User validation failed',
+      'USER_VALIDATION_ERROR',
+      { userId, cause: err }
+    )] as const;
+  }
+
+  return [validated, null] as const;
 }
 ```
 
 ### Error Transformation
 
 ```typescript
-interface ApiError {
-  code: number;
-  message: string;
-}
-
-function transformError(error: unknown): ApiError {
-  if (error instanceof ValidationError) {
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText,
+        details: { status: error.status }
+      };
+    }
+    if (error instanceof ValidationError) {
+      return {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: { field: error.field, value: error.value }
+      };
+    }
     return {
-      code: 400,
-      message: `Invalid ${error.field}: ${error.message}`,
+      code: 'UNKNOWN_ERROR',
+      message: String(error)
     };
   }
-  if (error instanceof NotFoundError) {
-    return {
-      code: 404,
-      message: error.message,
-    };
-  }
-  return {
-    code: 500,
-    message: error instanceof Error ? error.message : 'Unknown error',
-  };
-}
-
-async function createUser(userData: User) {
-  let [valid, err] = validateUser(userData);
-  if (err) return [null, transformError(err)] as const;
-
-  let [user, err] = await go(saveUser(userData));
-  if (err) return [null, transformError(err)] as const;
-
-  return [user, null] as const;
-}
-```
-
-### Sequential Operations
-
-```typescript
-async function processOrder(orderId: string) {
-  // Fetch order
-  let [order, err] = await go(fetchOrder(orderId));
-  if (err) return [null, err] as const;
-
-  // Validate order
-  let [valid, err] = go(() => validateOrder(order));
-  if (err) return [null, err] as const;
-
-  // Process payment
-  let [payment, err] = await go(processPayment(order));
-  if (err) return [null, err] as const;
-
-  // Update order status
-  let [updated, err] = await go(updateOrderStatus(order, 'paid'));
-  if (err) return [null, err] as const;
-
-  return [updated, null] as const;
-}
-```
-
-### Parallel Operations
-
-```typescript
-async function fetchUserProfile(userId: string) {
-  // Run multiple operations in parallel
-  const [
-    [userData, userErr],
-    [posts, postsErr],
-    [settings, settingsErr]
-  ] = await Promise.all([
-    go(fetchUser(userId)),
-    go(fetchUserPosts(userId)),
-    go(fetchUserSettings(userId))
-  ]);
-
-  // Aggregate errors
-  const errors: Error[] = [];
-  if (userErr) errors.push(userErr);
-  if (postsErr) errors.push(postsErr);
-  if (settingsErr) errors.push(settingsErr);
-
-  if (errors.length > 0) {
-    return [null, new AggregateError(errors, 'Failed to fetch user profile')] as const;
-  }
-
-  return [{
-    user: userData,
-    posts,
-    settings
-  }, null] as const;
-}
+});
 ```
 
 ## Best Practices
 
-### 1. Variable Declaration
-
+1. Always use `let` for result declarations:
 ```typescript
-// ✅ Good: Use let for consistent error handling
-let [data, err] = go(() => operation1());
+// ✅ Good: Using let
+let [value, err] = goSync(() => validate(input));
 if (err) return [null, err] as const;
 
-let [result, err] = go(() => operation2());
-if (err) return [null, err] as const;
-
-// ❌ Bad: Using const requires unique variable names
-const [data1, error1] = go(() => operation1());
-if (error1) return [null, error1] as const;
-
-const [data2, error2] = go(() => operation2());
-if (error2) return [null, error2] as const;
+// ❌ Bad: Using const
+const [data, error] = goSync(() => validate(input));
 ```
 
-### 2. Error Checking
-
+2. Add meaningful context to errors:
 ```typescript
-// ✅ Good: Check errors immediately
-let [data, err] = go(() => operation());
-if (err) return [null, err] as const;
+// ✅ Good: Rich error context
+class ValidationError extends Error {
+  constructor(
+    message: string,
+    public field: string,
+    public value: unknown
+  ) {
+    super(message);
+  }
+}
 
-// ❌ Bad: Delayed error checking
-let [data, err] = go(() => operation());
-// ... doing other things ...
-if (err) return [null, err] as const; // Too late!
+// ❌ Bad: Just message
+throw new Error('Validation failed');
 ```
 
-### 3. Type Safety
-
+3. Use error hierarchies for better error handling:
 ```typescript
-// ✅ Good: Explicit error types
-let [data, err] = go<Data, ValidationError>(() => validate());
+// ✅ Good: Error hierarchy
+class AppError extends Error {
+  constructor(message: string, public code: string) {
+    super(message);
+  }
+}
 
-// ✅ Good: Type inference from custom errors
-let [data, err] = go(() => {
-  throw new ValidationError('field', 'message');
+class ValidationError extends AppError {
+  constructor(message: string) {
+    super(message, 'VALIDATION_ERROR');
+  }
+}
+
+// ❌ Bad: Flat error types
+class ValidationError extends Error {}
+class NetworkError extends Error {}
+```
+
+4. Transform errors consistently:
+```typescript
+// ✅ Good: Consistent error transformation
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => ({
+    code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+    message: error instanceof Error ? error.message : String(error)
+  })
 });
 
-// ❌ Bad: Implicit any
-let [data, err] = go(() => someOperation());
-```
-
-### 4. Error Propagation
-
-```typescript
-// ✅ Good: Proper error propagation
-function processData(input: string) {
-  let [data, err] = go(() => parse(input));
-  if (err) return [null, err] as const;
-
-  let [result, err] = go(() => transform(data));
-  if (err) return [null, err] as const;
-
-  return [result, null] as const;
-}
-
-// ❌ Bad: Swallowing errors
-function processData(input: string) {
-  let [data, err] = go(() => parse(input));
-  if (err) {
-    console.error(err); // Don't just log and continue!
-  }
-
-  let [result, err] = go(() => transform(data));
-  return [result, null] as const; // Error from first operation is lost!
+// ❌ Bad: Inconsistent error handling
+let [data, err] = await goFetch('/api/user');
+if (err instanceof Response) {
+  // Handle response error
+} else if (err instanceof Error) {
+  // Handle error
 }
 ```
 
-## Common Pitfalls
+## See Also
 
-1. **Not Checking Errors**
-   ```typescript
-   // ❌ Bad: Not checking errors
-   let [data, err] = go(() => operation());
-   processData(data); // data might be null!
-
-   // ✅ Good: Always check errors
-   let [data, err] = go(() => operation());
-   if (err) return [null, err] as const;
-   processData(data); // Safe to use data
-   ```
-
-2. **Mixing Patterns**
-   ```typescript
-   // ❌ Bad: Mixing try-catch with go
-   try {
-     let [data, err] = go(() => operation());
-     if (err) throw err; // Don't throw the error!
-   } catch (error) {
-     // ...
-   }
-
-   // ✅ Good: Consistent error handling
-   let [data, err] = go(() => operation());
-   if (err) return [null, err] as const;
-   ```
-
-3. **Not Using Type Parameters**
-   ```typescript
-   // ❌ Bad: Missing type parameters
-   let [user, err] = await goFetch('/api/user');
-   
-   // ✅ Good: Explicit type parameters
-   let [user, err] = await goFetch<User, ApiError>('/api/user');
-   ```
-
-## Related
-
-- [go Function](/docs/api-reference/go) - Core function documentation
-- [goFetch Function](/docs/api-reference/go-fetch) - HTTP handling
-- [Type Safety Guide](/docs/guides/type-safety) - Advanced type safety usage 
+- [Type Safety](/docs/guides/type-safety)
+- [Edge Cases](/docs/guides/edge-cases)
+- [Best Practices](/docs/guides/best-practices) 

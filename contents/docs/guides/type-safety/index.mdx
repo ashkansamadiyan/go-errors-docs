@@ -1,3 +1,8 @@
+---
+title: Type Safety Guide
+description: Learn about type safety features and best practices in go-errors
+---
+
 # Type Safety Guide
 
 This guide covers type safety features and best practices when using the go-errors library.
@@ -23,20 +28,20 @@ This type ensures that:
 ### Basic Usage
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 // Default error type (Error)
-let [num, err] = go(() => 42);
+let [num, err] = goSync(() => 42);
 // num is number | null
 // err is Error | null
 
 // Custom value type
-let [str, err] = go<string>(() => 'hello');
+let [str, err] = goSync<string>(() => 'hello');
 // str is string | null
 // err is Error | null
 
 // Custom error type
-let [val, err] = go<number, ValidationError>(() => {
+let [val, err] = goSync<number, ValidationError>(() => {
   throw new ValidationError('value', 'Invalid number');
 });
 // val is number | null
@@ -49,18 +54,18 @@ TypeScript can often infer the correct types:
 
 ```typescript
 // Type inference from return value
-let [num, err] = go(() => 42);
+let [num, err] = goSync(() => 42);
 // num is inferred as number | null
 
 // Type inference from thrown error
-let [val, err] = go(() => {
+let [val, err] = goSync(() => {
   throw new ValidationError('field', 'message');
 });
 // err is inferred as ValidationError | null
 
 // Type inference in async operations
-let [data, err] = await go(Promise.resolve({ id: 1 }));
-// data is inferred as { id: number } | null
+let [data, err] = await goFetch('/api/data');
+// data is inferred from response
 ```
 
 ## Custom Error Types
@@ -99,7 +104,7 @@ type ApplicationError =
 
 ```typescript
 function validateUser(user: User) {
-  let [valid, err] = go<boolean, ValidationError>(() => {
+  let [valid, err] = goSync<boolean, ValidationError>(() => {
     if (!user.name) {
       throw new ValidationError('name', 'Name is required');
     }
@@ -134,29 +139,54 @@ interface ApiResponse<T> {
 
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
 }
 
 // Type-safe API call
-let [response, err] = await goFetch<ApiResponse<User>>('/api/user/1');
+let [response, err] = await goFetch<ApiResponse<User>>('/api/user/1', {
+  responseTransformer: (data) => ({
+    ...data,
+    data: {
+      ...data.data,
+      fullName: `${data.data.firstName} ${data.data.lastName}`
+    }
+  })
+});
+
 if (err) return [null, err] as const;
 
 // TypeScript knows response.data is User
-console.log(response.data.name);
+console.log(response.data.fullName);
 ```
 
 ### Error Types
 
 ```typescript
 interface ApiError {
-  code: number;
+  code: string;
   message: string;
-  details?: Record<string, unknown>;
+  details?: unknown;
 }
 
 // Type-safe error handling
-let [data, err] = await goFetch<User, ApiError>('/api/user/1');
+let [data, err] = await goFetch<User, ApiError>('/api/user/1', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+});
+
 if (err) {
   // TypeScript knows err has code and message
   console.error(`API Error ${err.code}: ${err.message}`);
@@ -205,7 +235,7 @@ function isValidationError(error: unknown): error is ValidationError {
 }
 
 // Using type guards
-let [data, err] = go(() => validateData());
+let [data, err] = goSync(() => validateData());
 if (err) {
   if (isValidationError(err)) {
     // TypeScript knows err has field property
@@ -226,7 +256,8 @@ interface ApiUser {
   id: string;  // API returns string
   created_at: string;
   updated_at: string;
-  user_name: string;
+  first_name: string;
+  last_name: string;
   email_address: string;
 }
 
@@ -234,7 +265,9 @@ interface User {
   id: number;  // We want number
   createdAt: Date;
   updatedAt: Date;
-  name: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
   email: string;
 }
 
@@ -245,92 +278,81 @@ let [user, err] = await goFetch<User>('/api/user/1', {
       id: parseInt(apiUser.id, 10),
       createdAt: new Date(apiUser.created_at),
       updatedAt: new Date(apiUser.updated_at),
-      name: apiUser.user_name,
+      firstName: apiUser.first_name,
+      lastName: apiUser.last_name,
+      fullName: `${apiUser.first_name} ${apiUser.last_name}`,
       email: apiUser.email_address,
     };
-  },
+  }
 });
 ```
 
 ### Error Transformers
 
 ```typescript
-interface ApiErrorResponse {
-  status: number;
-  error: string;
-  validation_errors?: {
-    field: string;
-    message: string;
-  }[];
+interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
 }
 
-let [data, err] = await goFetch<User, ValidationError>('/api/user', {
-  errorTransformer: (error: unknown): ValidationError => {
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
     if (error instanceof Response) {
-      const apiError = error as ApiErrorResponse;
-      if (apiError.validation_errors?.[0]) {
-        const { field, message } = apiError.validation_errors[0];
-        return new ValidationError(field, message);
-      }
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
     }
-    return new ValidationError('unknown', 'Unknown error occurred');
-  },
+    if (error instanceof ValidationError) {
+      return {
+        code: 'VALIDATION_ERROR',
+        message: error.message,
+        details: { field: error.field }
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
 });
 ```
 
 ## Best Practices
 
-### 1. Explicit Type Parameters
+1. **Always Use Type Parameters**
+   ```typescript
+   // ✅ Good: Explicit types
+   let [user, err] = await goFetch<User, ApiError>('/api/user');
 
-```typescript
-// ✅ Good: Explicit types
-let [user, err] = go<User, ApiError>(() => fetchUser());
+   // ❌ Bad: Implicit any
+   let [data, err] = await goFetch('/api/user');
+   ```
 
-// ❌ Bad: Implicit any
-let [data, err] = go(() => fetchData());
-```
+2. **Use Type Guards**
+   ```typescript
+   // ✅ Good: Type guard for error handling
+   if (isValidationError(err)) {
+     console.error(`Field ${err.field} is invalid`);
+   }
 
-### 2. Const Assertions
+   // ❌ Bad: Type assertion
+   console.error(`Field ${(err as ValidationError).field}`);
+   ```
 
-```typescript
-// ✅ Good: Const assertion for tuples
-return [data, null] as const;
-return [null, error] as const;
+3. **Return Type Safety**
+   ```typescript
+   // ✅ Good: Use as const for proper inference
+   return [value, null] as const;
+   return [null, err] as const;
 
-// ❌ Bad: No const assertion
-return [data, null];  // Type is (T | null)[]
-```
+   // ❌ Bad: Without as const
+   return [value, null];
+   ```
 
-### 3. Type Guards
+## See Also
 
-```typescript
-// ✅ Good: Type guard usage
-if (isValidationError(err)) {
-  handleValidationError(err.field);
-}
-
-// ❌ Bad: Type assertion
-handleValidationError((err as ValidationError).field);
-```
-
-### 4. Generic Constraints
-
-```typescript
-// ✅ Good: Generic constraints
-function process<T extends { id: number }>(data: T) {
-  let [result, err] = go(() => processItem(data));
-  return [result, err] as const;
-}
-
-// ❌ Bad: No constraints
-function process<T>(data: T) {
-  let [result, err] = go(() => processItem(data));
-  return [result, err] as const;
-}
-```
-
-## Related
-
-- [go Function](/docs/api-reference/go) - Core function documentation
-- [goFetch Function](/docs/api-reference/go-fetch) - HTTP handling
-- [Error Handling Guide](/docs/guides/error-handling) - Error handling patterns 
+- [Error Handling](/docs/guides/error-handling)
+- [Advanced Features](/docs/guides/advanced-features)
+- [Edge Cases](/docs/guides/edge-cases)

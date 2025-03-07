@@ -13,17 +13,17 @@ This guide outlines best practices and patterns for using go-errors effectively 
 
 ```typescript
 // ❌ Bad: Implicit any types
-const [value, error] = go(() => someOperation());
+const [value, error] = goSync(() => someOperation());
 
 // ✅ Good: Explicit type parameters
-const [value, error] = go<number, ValidationError>(() => someOperation());
+const [value, error] = goSync<number, ValidationError>(() => someOperation());
 ```
 
 ### Use Custom Error Types
 
 ```typescript
 // ❌ Bad: Generic Error type
-const [value, error] = go(() => validate(input));
+const [value, error] = goSync(() => validate(input));
 
 // ✅ Good: Custom error type for better error handling
 class ValidationError extends Error {
@@ -33,7 +33,7 @@ class ValidationError extends Error {
   }
 }
 
-const [value, error] = go<User, ValidationError>(() => validate(input));
+const [value, error] = goSync<User, ValidationError>(() => validate(input));
 if (error) {
   console.log(`Validation failed for field ${error.field}`);
 }
@@ -56,9 +56,9 @@ return [value, null] as const;
 ```typescript
 // ❌ Bad: Nested error handling
 async function processUser(id: string) {
-  const [user, userError] = await fetchUser(id);
+  const [user, userError] = await goFetch(`/api/users/${id}`);
   if (!userError) {
-    const [posts, postsError] = await fetchPosts(user.id);
+    const [posts, postsError] = await goFetch(`/api/users/${user.id}/posts`);
     if (!postsError) {
       return processData(user, posts);
     }
@@ -68,10 +68,10 @@ async function processUser(id: string) {
 
 // ✅ Good: Early returns
 async function processUser(id: string) {
-  const [user, userError] = await fetchUser(id);
+  const [user, userError] = await goFetch<User>(`/api/users/${id}`);
   if (userError) return [null, userError] as const;
 
-  const [posts, postsError] = await fetchPosts(user.id);
+  const [posts, postsError] = await goFetch<Post[]>(`/api/users/${user.id}/posts`);
   if (postsError) return [null, postsError] as const;
 
   return processData(user, posts);
@@ -83,7 +83,7 @@ async function processUser(id: string) {
 ```typescript
 // ❌ Bad: Lost error context
 function processData(data: unknown) {
-  const [validated, error] = go(() => validate(data));
+  const [validated, error] = goSync(() => validate(data));
   if (error) {
     throw new Error("Processing failed");  // Original error context lost
   }
@@ -92,7 +92,7 @@ function processData(data: unknown) {
 
 // ✅ Good: Preserve error context
 function processData(data: unknown) {
-  const [validated, error] = go(() => validate(data));
+  const [validated, error] = goSync(() => validate(data));
   if (error) {
     return [null, error] as const;  // Original error preserved
   }
@@ -129,16 +129,16 @@ class NetworkError extends Error {
 }
 ```
 
-## Async Operations
+## HTTP Operations
 
-### Consistent Promise Handling
+### Consistent HTTP Request Handling
 
 ```typescript
-// ❌ Bad: Mixing promise handling styles
+// ❌ Bad: Mixing fetch handling styles
 async function fetchData() {
   try {
     const response = await fetch('/api/data');
-    const [data, error] = go(() => response.json());
+    const [data, error] = goSync(() => response.json());
     if (error) throw error;
     return data;
   } catch (e) {
@@ -146,26 +146,22 @@ async function fetchData() {
   }
 }
 
-// ✅ Good: Consistent go-errors style
+// ✅ Good: Consistent goFetch style
 async function fetchData() {
-  const [response, fetchError] = await go(fetch('/api/data'));
-  if (fetchError) return [null, fetchError] as const;
-
-  const [data, parseError] = await go(response.json());
-  if (parseError) return [null, parseError] as const;
-
+  const [data, error] = await goFetch<ApiResponse>('/api/data');
+  if (error) return [null, error] as const;
   return [data, null] as const;
 }
 ```
 
-### Chain Operations Safely
+### Chain HTTP Operations Safely
 
 ```typescript
 // ❌ Bad: Complex error handling
 async function processUserData(userId: string) {
   try {
-    const user = await fetchUser(userId);
-    const posts = await fetchPosts(user.id);
+    const user = await fetch(`/api/users/${userId}`).then(r => r.json());
+    const posts = await fetch(`/api/users/${user.id}/posts`).then(r => r.json());
     const processed = await processData(user, posts);
     return processed;
   } catch (e) {
@@ -173,15 +169,15 @@ async function processUserData(userId: string) {
   }
 }
 
-// ✅ Good: Clear error handling chain
+// ✅ Good: Clear error handling chain with goFetch
 async function processUserData(userId: string) {
-  const [user, userError] = await go(fetchUser(userId));
+  const [user, userError] = await goFetch<User>(`/api/users/${userId}`);
   if (userError) return [null, userError] as const;
 
-  const [posts, postsError] = await go(fetchPosts(user.id));
+  const [posts, postsError] = await goFetch<Post[]>(`/api/users/${user.id}/posts`);
   if (postsError) return [null, postsError] as const;
 
-  const [processed, processError] = await go(processData(user, posts));
+  const [processed, processError] = goSync(() => processData(user, posts));
   if (processError) return [null, processError] as const;
 
   return [processed, null] as const;
@@ -195,7 +191,7 @@ async function processUserData(userId: string) {
 ```typescript
 // ❌ Bad: Mixed business and error handling logic
 function processPayment(amount: number) {
-  const [validated, validationError] = go(() => validateAmount(amount));
+  const [validated, validationError] = goSync(() => validateAmount(amount));
   if (validationError) {
     logError(validationError);
     notifyAdmin(validationError);
@@ -213,19 +209,19 @@ function handlePaymentError(error: Error) {
 }
 
 function processPayment(amount: number) {
-  const [validated, validationError] = go(() => validateAmount(amount));
+  const [validated, validationError] = goSync(() => validateAmount(amount));
   if (validationError) return handlePaymentError(validationError);
   
   // Business logic only...
 }
 ```
 
-### Reusable Error Handling Patterns
+### Reusable HTTP Request Patterns
 
 ```typescript
-// ✅ Good: Reusable retry pattern
+// ✅ Good: Reusable retry pattern for HTTP requests
 async function withRetry<T>(
-  operation: () => Promise<T>,
+  url: string,
   options: {
     maxRetries?: number;
     delay?: number;
@@ -236,7 +232,7 @@ async function withRetry<T>(
   let lastError: Error | null = null;
 
   for (let i = 0; i < maxRetries; i++) {
-    const [result, error] = await go(operation());
+    const [result, error] = await goFetch<T>(url);
     if (!error) return [result, null];
     
     lastError = error;
@@ -248,52 +244,6 @@ async function withRetry<T>(
   }
 
   return [null, lastError] as const;
-}
-
-// Usage
-const [data, error] = await withRetry(
-  () => fetchData(),
-  {
-    maxRetries: 5,
-    delay: 2000,
-    onRetry: (error, attempt) => {
-      console.log(`Retry ${attempt} failed:`, error.message);
-    }
-  }
-);
-```
-
-### Error Logging and Monitoring
-
-```typescript
-// ✅ Good: Structured error logging
-interface ErrorLog {
-  error: Error;
-  context: Record<string, unknown>;
-  timestamp: Date;
-  severity: 'low' | 'medium' | 'high';
-}
-
-function logError(error: Error, context: Record<string, unknown> = {}) {
-  const log: ErrorLog = {
-    error,
-    context,
-    timestamp: new Date(),
-    severity: error instanceof ValidationError ? 'low' : 'high'
-  };
-  
-  // Log to monitoring system
-  console.error(JSON.stringify(log, null, 2));
-}
-
-// Usage in error handling
-function processOrder(order: Order) {
-  const [validated, error] = go(() => validateOrder(order));
-  if (error) {
-    logError(error, { orderId: order.id });
-    return [null, error] as const;
-  }
-  return [validated, null] as const;
 }
 ```
 

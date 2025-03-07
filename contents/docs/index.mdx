@@ -1,0 +1,126 @@
+---
+title: "go-errors Documentation"
+description: "Complete documentation for the go-errors TypeScript library"
+---
+
+# go-errors Documentation
+
+<div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
+  <a href="https://www.npmjs.com/package/go-errors">
+    <img src="https://img.shields.io/npm/v/go-errors?style=flat-square" alt="npm version" />
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/TypeScript-4.9+-blue?style=flat-square" alt="TypeScript" />
+  </a>
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT" />
+  </a>
+</div>
+
+Welcome to the **go-errors** documentation! This library brings Go-style error handling to JavaScript/TypeScript, providing a type-safe and elegant way to handle errors without try-catch blocks.
+
+## Quick Start
+
+Install the library using bun:
+
+```bash
+bun add go-errors
+```
+
+Basic usage:
+
+```typescript
+import { goSync, goFetch } from 'go-errors';
+
+// Synchronous operations
+let [value, err] = goSync(() => {
+  if (Math.random() > 0.5) throw new Error('Bad luck!');
+  return 42;
+});
+
+if (err) {
+  console.error('Something went wrong:', err.message);
+} else {
+  console.log('Got value:', value);
+}
+
+// HTTP requests with type safety
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
+if (err) {
+  console.error('Failed to fetch user:', err.message);
+} else {
+  console.log('User:', user.fullName);
+}
+```
+
+## Core Features
+
+- 🎯 **Type-safe** error handling with full TypeScript support
+- 🔄 **Go-style** result tuples `[value, error]`
+- ⚡ **Zero dependencies** and lightweight
+- 🔀 **Unified API** for both synchronous and asynchronous operations
+- 🌐 **Enhanced Fetch** with built-in transformers and type safety
+- 🛡️ **Predictable error handling** without try-catch blocks
+- 📦 **Tree-shakeable** and optimized for bundle size
+
+## Documentation Sections
+
+### Getting Started
+- [Introduction](/docs/getting-started/introduction) - Overview and key features
+- [Installation](/docs/getting-started/installation) - Installation guide
+- [Quick Start Guide](/docs/getting-started/quick-start-guide) - Get started in 5 minutes
+- [Core Concepts](/docs/getting-started/core-concepts) - Fundamental concepts
+
+### API Reference
+- [Core Functions](/docs/api-reference/core-functions) - Main library functions
+- [Types](/docs/api-reference/types) - Type system documentation
+- [Error Handling](/docs/api-reference/error-handling) - Error handling features
+- [goFetch](/docs/api-reference/go-fetch) - Enhanced fetch functionality
+
+### Examples
+- [Basic Usage](/docs/examples/basic-usage) - Common usage patterns
+- [Error Propagation](/docs/examples/error-propagation) - Error handling patterns
+- [Custom Error Types](/docs/examples/custom-error-types) - Working with custom errors
+
+### Guides
+
+#### Basic Concepts
+- [Basic Usage](/docs/guides/basic-usage) - Getting started guide
+- [HTTP Requests](/docs/guides/http-requests) - Making HTTP requests
+
+#### Advanced Topics
+- [Advanced Features](/docs/guides/advanced-features) - Advanced usage patterns
+- [Advanced Patterns](/docs/guides/advanced-patterns) - Complex scenarios
+- [Best Practices](/docs/guides/best-practices) - Recommended practices
+
+#### Error Handling
+- [Error Handling Patterns](/docs/guides/error-handling) - Common patterns
+- [Edge Cases](/docs/guides/edge-cases) - Special cases
+- [Type Safety](/docs/guides/type-safety) - Type system features
+
+#### Async Programming
+- [Async Patterns](/docs/guides/async-patterns) - Async operations
+- [Function Differences](/docs/guides/function-differences) - Understanding functions
+
+## Community and Support
+
+- [GitHub Repository](https://github.com/ashkansamadiyan/go-style-errors)
+- [Issue Tracker](https://github.com/ashkansamadiyan/go-style-errors/issues)
+- [Blog Posts](/docs/blog)
+
+## License
+
+go-errors is licensed under the MIT License. See the [LICENSE](https://github.com/ashkansamadiyan/go-style-errors/blob/main/LICENSE) file for details. 

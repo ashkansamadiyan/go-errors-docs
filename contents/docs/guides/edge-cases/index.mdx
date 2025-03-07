@@ -8,22 +8,22 @@ description: "Learn how go-errors handles complex JavaScript values and edge cas
 ### Nested Objects
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync } from 'go-errors';
 
 // Handling deeply nested objects
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw { nested: { deep: { value: 42 } } };
 });
 // err will be an Error with message: '{"nested":{"deep":{"value":42}}}'
 
 // Handling arrays
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw [1, 2, 3];
 });
 // err will be an Error with message: '[1,2,3]'
 
 // Mixed complex objects
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw { arr: [1, { x: 2 }], obj: { y: [3, 4] } };
 });
 // err will be an Error with message: '{"arr":[1,{"x":2}],"obj":{"y":[3,4]}}'
@@ -35,7 +35,7 @@ let [result, err] = go(() => {
 let circular: any = { foo: "bar" };
 circular.self = circular;
 
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw circular;
 });
 // err will be an Error with message: "JSON.stringify cannot serialize cyclic structures."
@@ -47,7 +47,7 @@ let [result, err] = go(() => {
 
 ```typescript
 let sym = Symbol('test');
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw sym;
 });
 // err will be an Error with message: 'Symbol(test)'
@@ -56,7 +56,7 @@ let [result, err] = go(() => {
 ### BigInt Support
 
 ```typescript
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw BigInt(9007199254740991);
 });
 // err will be an Error with message: '9007199254740991'
@@ -66,7 +66,7 @@ let [result, err] = go(() => {
 
 ```typescript
 function testFn() { return 42; }
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw testFn;
 });
 // err will be an Error containing function representation
@@ -76,7 +76,7 @@ let [result, err] = go(() => {
 
 ```typescript
 let date = new Date('2024-01-01');
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw date;
 });
 // err will be an Error with stringified date
@@ -86,7 +86,7 @@ let [result, err] = go(() => {
 
 ```typescript
 let regex = /test/gi;
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw regex;
 });
 // err will be an Error with message: '/test/gi'
@@ -95,7 +95,7 @@ let [result, err] = go(() => {
 ## Error Stack Preservation
 
 ```typescript
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw new Error('test');
 });
 // err.stack will contain the full stack trace
@@ -112,7 +112,7 @@ class CustomError extends Error {
   }
 }
 
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   throw new CustomError(500, 'test');
 });
 // err will be instanceof CustomError
@@ -123,9 +123,9 @@ let [result, err] = go(() => {
 ## Nested Errors
 
 ```typescript
-let [result, err] = go(() => {
+let [result, err] = goSync(() => {
   const e = new Error('outer');
-  (e as any).cause = new Error('inner');
+  e.cause = new Error('inner');
   throw e;
 });
 // err.message will be 'outer'
@@ -138,12 +138,12 @@ let [result, err] = go(() => {
 
 ```typescript
 // Handling undefined
-let [result, err] = await go(Promise.resolve(undefined));
+let [result, err] = await goFetch<undefined>('/api/empty');
 // result will be undefined
 // err will be null
 
 // Handling null
-let [result, err] = await go(Promise.resolve(null));
+let [result, err] = await goFetch<null>('/api/null');
 // result will be null
 // err will be null
 ```
@@ -152,19 +152,47 @@ let [result, err] = await go(Promise.resolve(null));
 
 ```typescript
 // Empty string
-let [result, err] = await go(Promise.resolve(""));
+let [result, err] = goSync(() => "");
 // result will be ""
 // err will be null
 
 // Zero
-let [result, err] = go(() => 0);
+let [result, err] = goSync(() => 0);
 // result will be 0
 // err will be null
 
 // False
-let [result, err] = go(() => false);
+let [result, err] = goSync(() => false);
 // result will be false
 // err will be null
+```
+
+## HTTP Edge Cases
+
+```typescript
+// Empty response
+let [data, err] = await goFetch('/api/empty');
+// data will be undefined or null depending on response
+
+// Non-JSON response
+let [text, err] = await goFetch<string>('/api/text', {
+  responseTransformer: async (response) => {
+    if (response instanceof Response) {
+      return response.text();
+    }
+    return String(response);
+  }
+});
+
+// Binary response
+let [blob, err] = await goFetch<Blob>('/api/binary', {
+  responseTransformer: async (response) => {
+    if (response instanceof Response) {
+      return response.blob();
+    }
+    throw new Error('Expected binary response');
+  }
+});
 ```
 
 ## Best Practices
@@ -199,7 +227,7 @@ let [result, err] = go(() => false);
    ```typescript
    // ✅ Good: Type-safe handling
    function processValue<T>(value: T | undefined | null) {
-     let [result, err] = go(() => {
+     let [result, err] = goSync(() => {
        if (value === undefined) return 'undefined';
        if (value === null) return 'null';
        return String(value);
@@ -208,8 +236,8 @@ let [result, err] = go(() => false);
    }
    ```
 
-## Related
+## See Also
 
-- [Error Handling Guide](/docs/guides/error-handling) - Basic error handling patterns
-- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices
-- [Advanced Features](/docs/guides/advanced-features) - Advanced usage patterns 
+- [Error Handling](/docs/guides/error-handling)
+- [Type Safety](/docs/guides/type-safety)
+- [Advanced Features](/docs/guides/advanced-features)

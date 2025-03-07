@@ -1,3 +1,8 @@
+---
+title: Basic Usage
+description: Learn the basic usage patterns of go-errors
+---
+
 # Basic Usage Guide
 
 This guide covers the basic usage patterns of the go-errors library. It's designed to help you get started quickly with Go-style error handling in TypeScript/JavaScript.
@@ -15,7 +20,7 @@ bun add go-errors
 ### Basic Error Handling
 
 ```typescript
-import { goSync, go, goFetch } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 // Synchronous operation
 let [value, err] = goSync(() => {
@@ -24,32 +29,31 @@ let [value, err] = goSync(() => {
 });
 
 if (err) {
-  console.error('Something went wrong:', err);
-} else {
-  console.log('Got value:', value);
+  console.error('Something went wrong:', err.message);
+  return;
 }
-
-// Asynchronous operation
-let [data, err] = await go(someAsyncOperation());
-if (err) {
-  console.error('Failed:', err);
-} else {
-  console.log('Got data:', data);
-}
+console.log('Got value:', value);
 
 // HTTP request with goFetch
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
 let [user, err] = await goFetch<User>('/api/user/123', {
   responseTransformer: (data) => ({
-    id: data.id,
-    name: `${data.firstName} ${data.lastName}`
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
   })
 });
 
 if (err) {
-  console.error('Failed to fetch user:', err);
-} else {
-  console.log('User:', user);
+  console.error('Failed to fetch user:', err.message);
+  return;
 }
+console.log('User:', user.fullName);
 ```
 
 ## Core Concepts
@@ -91,7 +95,7 @@ const [value2, error2] = goSync(() => anotherOperation()); // Less idiomatic
 // Simple value return
 let [num, err] = goSync(() => 42);
 if (err) {
-  console.error(err);
+  console.error(err.message);
   return;
 }
 console.log(num); // 42
@@ -110,38 +114,44 @@ function divide(a: number, b: number) {
 // Usage
 let [value, err] = divide(10, 2);
 if (err) {
-  console.error('Division failed:', err);
+  console.error('Division failed:', err.message);
   return;
 }
 console.log('Result:', value); // 5
 ```
 
-### Asynchronous Operations
+### HTTP Operations
 
 ```typescript
-// With Promises
-let [data, err] = await go(Promise.resolve('async data'));
+// Simple GET request
+let [data, err] = await goFetch('/api/data');
 if (err) {
-  console.error(err);
+  console.error('Failed to fetch:', err.message);
   return;
 }
-console.log(data); // 'async data'
+console.log('Got data:', data);
 
-// With async functions
-async function fetchUser(id: string) {
-  let [user, err] = await goFetch<User>(`/api/users/${id}`);
-  if (err) return [null, err] as const;
-
-  return [user, null] as const;
+// Typed request with transformers
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  email: string;
 }
 
-// Usage
-let [user, err] = await fetchUser('123');
+let [user, err] = await goFetch<User>('/api/user/1', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
+});
+
 if (err) {
-  console.error('Failed to fetch user:', err);
+  console.error('Failed to fetch user:', err.message);
   return;
 }
-console.log('User:', user);
+console.log('User name:', user.fullName);
 ```
 
 ### Error Propagation
@@ -173,211 +183,54 @@ function processData(input: unknown) {
 }
 ```
 
-### HTTP Requests with goFetch
-
-```typescript
-// Simple GET request
-let [data, err] = await goFetch('/api/data');
-if (err) {
-  console.error('Failed to fetch:', err);
-  return;
-}
-console.log('Got data:', data);
-
-// Typed request with transformers
-interface User {
-  id: number;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-}
-
-let [user, err] = await goFetch<User>('/api/user/1', {
-  responseTransformer: (data) => ({
-    ...data,
-    fullName: `${data.firstName} ${data.lastName}`
-  }),
-  errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
-});
-
-if (err) {
-  console.error('Failed to fetch user:', err);
-  return;
-}
-console.log('User name:', user.fullName);
-```
-
-## Common Use Cases
-
-### Form Validation
-
-```typescript
-interface FormData {
-  username: string;
-  email: string;
-  age: number;
-}
-
-function validateForm(data: unknown): Result<FormData, Error> {
-  let [validated, err] = goSync(() => {
-    const form = data as FormData;
-    
-    if (!form.username) {
-      throw new Error('Username is required');
-    }
-    if (!form.email.includes('@')) {
-      throw new Error('Invalid email');
-    }
-    if (form.age < 18) {
-      throw new Error('Must be 18 or older');
-    }
-
-    return form;
-  });
-
-  return [validated, err] as const;
-}
-
-// Usage
-let [form, err] = validateForm({
-  username: 'john',
-  email: 'john@example.com',
-  age: 25,
-});
-```
-
-### File Operations
-
-```typescript
-async function readJsonFile(path: string) {
-  let [content, err] = await go(fs.readFile(path, 'utf-8'));
-  if (err) return [null, err] as const;
-
-  let [data, err] = goSync(() => JSON.parse(content));
-  if (err) return [null, err] as const;
-
-  return [data, null] as const;
-}
-
-// Usage
-let [config, err] = await readJsonFile('config.json');
-```
-
-### API Integration
-
-```typescript
-interface ApiResponse<T> {
-  data: T;
-  metadata: {
-    timestamp: string;
-    version: string;
-  };
-}
-
-async function fetchApiData<T>(endpoint: string) {
-  let [response, err] = await goFetch<ApiResponse<T>>(endpoint, {
-    responseTransformer: (data) => ({
-      ...data,
-      metadata: {
-        ...data.metadata,
-        receivedAt: new Date().toISOString()
-      }
-    }),
-    errorTransformer: (e) => new ApiError(
-      e instanceof Error ? e.message : 'Unknown',
-      getErrorCode(e)
-    )
-  });
-
-  if (err) return [null, err] as const;
-  return [response.data, null] as const;
-}
-
-// Usage
-let [userData, err] = await fetchApiData<User>('/api/user/123');
-```
-
 ## Best Practices
 
-### 1. Always Check Errors
-
+1. Always use `let` for result declarations:
 ```typescript
-// ✅ Good: Check errors immediately
-let [data, err] = goSync(() => operation());
-if (err) return handleError(err);
+// ✅ Good: Using let
+let [value, err] = goSync(() => validate(input));
+if (err) return [null, err] as const;
 
-// ❌ Bad: Ignoring errors
-let [data, err] = goSync(() => operation());
-useData(data); // data might be null!
+// ❌ Bad: Using const
+const [data, error] = goSync(() => validate(input));
 ```
 
-### 2. Use Type Parameters
+2. Always check errors before using values:
+```typescript
+// ✅ Good: Check errors first
+let [data, err] = await goFetch('/api/data');
+if (err) {
+  console.error('Failed:', err.message);
+  return;
+}
+console.log('Data:', data);
 
+// ❌ Bad: Using data without checking
+let [data, err] = await goFetch('/api/data');
+console.log('Data:', data); // data might be null!
+```
+
+3. Use type parameters for better type safety:
 ```typescript
 // ✅ Good: Explicit types
-let [user, err] = goSync<User, ApiError>(() => fetchUser());
+let [user, err] = await goFetch<User, ApiError>('/api/user/123');
 
 // ❌ Bad: Implicit any
-let [data, err] = goSync(() => fetchData());
+let [data, err] = await goFetch('/api/user/123');
 ```
 
-### 3. Consistent Error Handling
-
+4. Use `as const` for return values:
 ```typescript
-// ✅ Good: Consistent pattern
-function processData(input: string) {
-  let [data, err] = goSync(() => parse(input));
-  if (err) return [null, err] as const;
+// ✅ Good: Using as const
+return [value, null] as const;
+return [null, err] as const;
 
-  let [result, err] = goSync(() => transform(data));
-  if (err) return [null, err] as const;
-
-  return [result, null] as const;
-}
-
-// ❌ Bad: Inconsistent pattern
-function processData(input: string) {
-  try {
-    let [data, err] = goSync(() => parse(input));
-    if (err) throw err; // Don't mix with try-catch
-
-    return transform(data);
-  } catch (error) {
-    return null;
-  }
-}
+// ❌ Bad: Without as const
+return [value, null];
 ```
 
-### 4. Early Returns
+## See Also
 
-```typescript
-// ✅ Good: Early returns
-function processUser(user: User) {
-  let [validated, err] = goSync(() => validateUser(user));
-  if (err) return [null, err] as const;
-
-  let [processed, err] = goSync(() => processUserData(validated));
-  if (err) return [null, err] as const;
-
-  return [processed, null] as const;
-}
-
-// ❌ Bad: Nested conditions
-function processUser(user: User) {
-  let [validated, err] = goSync(() => validateUser(user));
-  if (!err) {
-    let [processed, err] = goSync(() => processUserData(validated));
-    if (!err) {
-      return [processed, null] as const;
-    }
-    return [null, err] as const;
-  }
-  return [null, err] as const;
-}
-```
-
-## Related
-
-- [Error Handling Guide](/docs/guides/error-handling) - Advanced error handling patterns
-- [HTTP Guide](/docs/guides/http-requests) - Making HTTP requests
-- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices 
+- [Error Handling](/docs/guides/error-handling)
+- [HTTP Requests](/docs/guides/http-requests)
+- [Type Safety](/docs/guides/type-safety)

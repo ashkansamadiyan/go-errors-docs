@@ -8,11 +8,11 @@ description: "Master asynchronous operations and HTTP requests with go-errors"
 ### Promise Timeouts
 
 ```typescript
-import { go } from 'go-errors';
+import { goFetch } from 'go-errors';
 
 // Handle promise timeouts
 let [result, err] = await Promise.race([
-  go(longRunningOperation()),
+  goFetch('/api/data'),
   new Promise<[null, Error]>(resolve => 
     setTimeout(() => resolve([null, new Error('timeout')]), 5000)
   )
@@ -26,47 +26,20 @@ if (err?.message === 'timeout') {
 ### Multiple Promise Handling
 
 ```typescript
-// Handle multiple promises
-const promises = [
-  fetch('/api/data1'),
-  fetch('/api/data2')
-];
+// Handle multiple promises in parallel
+let [results, errors] = await Promise.all([
+  goFetch('/api/data1'),
+  goFetch('/api/data2')
+]).then(results => {
+  const data = results.map(([d]) => d);
+  const errors = results.map(([_, e]) => e).filter(Boolean);
+  return [data, errors.length ? errors : null] as const;
+});
 
-let results = await Promise.all(promises.map(p => go(p)));
-// results[0] and results[1] will each be [result, error] tuples
-```
-
-### Nested Promises
-
-```typescript
-// Handle nested promises elegantly
-let [result, err] = await go(
-  Promise.resolve(Promise.resolve(42))
-);
-// result will be 42
-// err will be null
-
-// Handle rejected nested promises
-let [result, err] = await go(
-  Promise.resolve(Promise.reject(new Error('Inner error')))
-);
-// result will be null
-// err will be Error('Inner error')
-```
-
-## Fetch Integration
-
-### Basic Usage
-
-```typescript
-import { goFetch } from 'go-errors';
-
-// Simple GET request
-let [data, error] = await goFetch('https://api.example.com/data');
-if (error) {
-  console.error('Failed to fetch:', error);
+if (errors) {
+  console.error('Some requests failed:', errors);
 } else {
-  console.log('Data:', data);
+  console.log('All data:', results);
 }
 ```
 
@@ -75,118 +48,189 @@ if (error) {
 ```typescript
 interface User {
   id: number;
-  name: string;
+  firstName: string;
+  lastName: string;
 }
 
 interface TransformedUser {
   userId: string;
-  displayName: string;
+  fullName: string;
 }
 
-let [data, error] = await goFetch<TransformedUser>('https://api.example.com/user', {
-  responseTransformer: (data: unknown) => ({
-    userId: `user_${(data as User).id}`,
-    displayName: (data as User).name.toUpperCase()
-  })
+let [user, err] = await goFetch<TransformedUser>('/api/user', {
+  responseTransformer: (data: unknown) => {
+    const user = data as User;
+    return {
+      userId: `user_${user.id}`,
+      fullName: `${user.firstName} ${user.lastName}`
+    };
+  }
 });
+
+if (err) {
+  console.error('Failed to fetch user:', err);
+} else {
+  console.log('User:', user);
+}
 ```
 
 ### Error Transformation
 
 ```typescript
-interface CustomError {
+interface ApiError {
   code: string;
   message: string;
+  details?: unknown;
 }
 
-let [data, error] = await goFetch<unknown, CustomError>('https://api.example.com/data', {
-  errorTransformer: (e) => ({
-    code: e instanceof Error ? 'FETCH_ERROR' : 'UNKNOWN_ERROR',
-    message: e instanceof Error ? e.message : 'Unknown error occurred'
-  })
-});
-```
-
-### Combined Transformers
-
-```typescript
-interface ApiResponse {
-  id: number;
-  name: string;
-}
-
-interface TransformedResponse {
-  uid: string;
-  displayName: string;
-}
-
-interface ApiError {
-  type: string;
-  details: string;
-}
-
-let [data, error] = await goFetch<TransformedResponse, ApiError>(
-  'https://api.example.com/data',
-  {
-    responseTransformer: (data: unknown) => ({
-      uid: `user_${(data as ApiResponse).id}`,
-      displayName: (data as ApiResponse).name
-    }),
-    errorTransformer: (e) => ({
-      type: 'API_ERROR',
-      details: e instanceof Error ? e.message : String(e)
-    })
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText,
+        details: { status: error.status }
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : String(error)
+    };
   }
-);
+});
+
+if (err) {
+  console.error(`API Error (${err.code}):`, err.message);
+}
 ```
 
-### Error Handling
+### Parallel Operations
 
 ```typescript
-// HTTP Errors
-let [data, error] = await goFetch('https://api.example.com/notfound');
-if (error?.includes('HTTP error! status: 404')) {
-  console.log('Resource not found');
+interface UserProfile {
+  user: User;
+  posts: Post[];
+  settings: UserSettings;
 }
 
-// Network Errors
-let [data, error] = await goFetch('https://invalid-url');
-if (error?.includes('Network error')) {
-  console.log('Network is unreachable');
+async function fetchUserProfile(userId: string): Promise<Result<UserProfile, ApiError>> {
+  // Fetch all data in parallel
+  const [
+    [user, userErr],
+    [posts, postsErr],
+    [settings, settingsErr]
+  ] = await Promise.all([
+    goFetch<User>(`/api/users/${userId}`),
+    goFetch<Post[]>(`/api/users/${userId}/posts`),
+    goFetch<UserSettings>(`/api/users/${userId}/settings`)
+  ]);
+
+  // Handle any errors
+  if (userErr || postsErr || settingsErr) {
+    return [null, {
+      code: 'FETCH_ERROR',
+      message: 'Failed to fetch user profile',
+      details: {
+        user: userErr,
+        posts: postsErr,
+        settings: settingsErr
+      }
+    }] as const;
+  }
+
+  // Return combined data
+  return [{
+    user,
+    posts,
+    settings
+  }, null] as const;
+}
+```
+
+### Retry Pattern
+
+```typescript
+interface RetryOptions {
+  maxRetries: number;
+  initialDelay: number;
+  maxDelay: number;
+  backoffFactor: number;
+  shouldRetry?: (error: unknown) => boolean;
 }
 
-// Invalid JSON
-let [data, error] = await goFetch('https://api.example.com/invalid-json');
-if (error?.includes('Failed to parse JSON')) {
-  console.log('Server returned invalid JSON');
+async function withRetry<T, E = Error>(
+  operation: () => Promise<Result<T, E>>,
+  options: RetryOptions
+): Promise<Result<T, E>> {
+  let delay = options.initialDelay;
+  let lastError: E | null = null;
+
+  for (let attempt = 0; attempt < options.maxRetries; attempt++) {
+    let [result, err] = await operation();
+    if (!err) {
+      return [result, null] as const;
+    }
+
+    lastError = err;
+    if (options.shouldRetry && !options.shouldRetry(err)) {
+      break;
+    }
+
+    if (attempt < options.maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay = Math.min(delay * options.backoffFactor, options.maxDelay);
+    }
+  }
+
+  return [null, lastError] as const;
 }
+
+// Usage with goFetch
+async function fetchWithRetry<T>(url: string) {
+  return withRetry<T>(
+    () => goFetch<T>(url),
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      maxDelay: 5000,
+      backoffFactor: 2,
+      shouldRetry: (error) => {
+        if (error instanceof Response) {
+          // Retry on network errors or 5xx server errors
+          return error.status >= 500;
+        }
+        return true;
+      }
+    }
+  );
+}
+
+let [data, err] = await fetchWithRetry<User>('/api/user/123');
 ```
 
 ## Best Practices
 
-1. **Always Set Timeouts**
+1. **Use Type Parameters**
    ```typescript
-   // ✅ Good: Set timeouts for long-running operations
-   let [data, error] = await Promise.race([
-     goFetch('https://api.example.com/data'),
-     new Promise<[null, Error]>(resolve => 
-       setTimeout(() => resolve([null, new Error('Request timeout')]), 5000)
-     )
-   ]);
+   // ✅ Good: Explicit types
+   let [user, err] = await goFetch<User, ApiError>('/api/user');
+
+   // ❌ Bad: Implicit any
+   let [data, err] = await goFetch('/api/user');
    ```
 
-2. **Type Your Transformers**
+2. **Transform Responses**
    ```typescript
-   // ✅ Good: Use TypeScript interfaces for type safety
-   interface ApiResponse<T> {
-     data: T;
-     meta: { timestamp: number };
-   }
-   
-   let [data, error] = await goFetch<User>('https://api.example.com/user', {
-     responseTransformer: (response: unknown) => {
-       const typed = response as ApiResponse<User>;
-       return typed.data;
+   // ✅ Good: Transform and validate responses
+   let [user, err] = await goFetch<User>('/api/user', {
+     responseTransformer: (data) => {
+       if (!isValidUser(data)) {
+         throw new Error('Invalid user data');
+       }
+       return {
+         ...data,
+         fullName: `${data.firstName} ${data.lastName}`
+       };
      }
    });
    ```
@@ -194,24 +238,27 @@ if (error?.includes('Failed to parse JSON')) {
 3. **Handle All Error Cases**
    ```typescript
    // ✅ Good: Comprehensive error handling
-   let [data, error] = await goFetch('https://api.example.com/data');
-   if (error) {
-     if (error.includes('HTTP error! status: 429')) {
-       // Handle rate limiting
-       await delay(1000);
-       return retry();
-     } else if (error.includes('Network error')) {
-       // Handle offline state
-       return loadFromCache();
-     } else {
-       // Handle other errors
-       reportError(error);
+   let [data, err] = await goFetch<User, ApiError>('/api/user', {
+     errorTransformer: (error) => ({
+       code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+       message: error instanceof Error ? error.message : String(error)
+     })
+   });
+
+   if (err) {
+     switch (err.code) {
+       case 'HTTP_404':
+         return handleNotFound();
+       case 'HTTP_401':
+         return handleUnauthorized();
+       default:
+         return handleError(err);
      }
    }
    ```
 
-## Related
+## See Also
 
-- [Edge Cases Guide](/docs/guides/edge-cases) - Handling special cases
-- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices
-- [Error Handling Guide](/docs/guides/error-handling) - Basic error handling patterns 
+- [Error Handling](/docs/guides/error-handling)
+- [Type Safety](/docs/guides/type-safety)
+- [Edge Cases](/docs/guides/edge-cases) 

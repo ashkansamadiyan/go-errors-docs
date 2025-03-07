@@ -54,7 +54,7 @@ class AuthError extends AppError {
 
 // Usage
 function findUser(id: string) {
-  let [user, err] = go<User, AppError>(() => {
+  let [user, err] = goSync<User, AppError>(() => {
     if (!isAuthenticated()) {
       throw new AuthError('Not authenticated');
     }
@@ -91,7 +91,7 @@ async function validateUserBatch(users: User[]) {
   const validUsers: User[] = [];
 
   for (const user of users) {
-    let [valid, err] = await go(validateUser(user));
+    let [valid, err] = goSync(() => validateUser(user));
     if (err) {
       errors.push(err);
       continue;
@@ -249,54 +249,54 @@ interface RetryOptions {
   shouldRetry?: (error: unknown) => boolean;
 }
 
-async function fetchWithRetry<T, E = Error>(
-  url: string,
-  options?: RequestInit,
-  retryOptions: RetryOptions = {
-    maxRetries: 3,
-    initialDelay: 1000,
-    maxDelay: 10000,
-    backoffFactor: 2,
-  }
+async function withRetry<T, E = Error>(
+  operation: () => Promise<Result<T, E>>,
+  options: RetryOptions
 ): Promise<Result<T, E>> {
+  let delay = options.initialDelay;
   let lastError: E | null = null;
-  let delay = retryOptions.initialDelay;
 
-  for (let attempt = 0; attempt <= retryOptions.maxRetries; attempt++) {
-    let [data, err] = await goFetch<T, E>(url, options);
-    if (!err) return [data, null] as const;
+  for (let attempt = 0; attempt < options.maxRetries; attempt++) {
+    let [result, err] = await operation();
+    if (!err) {
+      return [result, null] as const;
+    }
 
     lastError = err;
+    if (options.shouldRetry && !options.shouldRetry(err)) {
+      break;
+    }
 
-    if (attempt === retryOptions.maxRetries) break;
-    if (retryOptions.shouldRetry && !retryOptions.shouldRetry(err)) break;
-
-    // Calculate next delay with exponential backoff
-    await new Promise(resolve => setTimeout(resolve, delay));
-    delay = Math.min(
-      delay * retryOptions.backoffFactor,
-      retryOptions.maxDelay
-    );
+    if (attempt < options.maxRetries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay = Math.min(delay * options.backoffFactor, options.maxDelay);
+    }
   }
 
   return [null, lastError] as const;
 }
 
-// Usage
-let [data, err] = await fetchWithRetry<User>('/api/user/1', undefined, {
-  maxRetries: 3,
-  initialDelay: 1000,
-  maxDelay: 5000,
-  backoffFactor: 2,
-  shouldRetry: (error) => {
-    // Only retry on network errors or 5xx errors
-    if (error instanceof Error) {
-      return error.name === 'NetworkError';
+// Usage with goFetch
+async function fetchWithRetry<T>(url: string) {
+  return withRetry<T>(
+    () => goFetch<T>(url),
+    {
+      maxRetries: 3,
+      initialDelay: 1000,
+      maxDelay: 5000,
+      backoffFactor: 2,
+      shouldRetry: (error) => {
+        if (error instanceof Response) {
+          // Retry on network errors or 5xx server errors
+          return error.status >= 500;
+        }
+        return true;
+      },
     }
-    const apiError = error as ApiError;
-    return apiError.code >= 500;
-  },
-});
+  );
+}
+
+let [data, err] = await fetchWithRetry<User>('/api/user/123');
 ```
 
 ## Advanced Type Patterns
@@ -328,7 +328,7 @@ function handleResult<T>(result: Result<T>) {
 
 // Usage
 function processUser(userData: unknown): Result<User> {
-  let [validated, err] = go(() => validateUser(userData));
+  let [validated, err] = goSync(() => validateUser(userData));
   if (err) {
     if (err instanceof ValidationError) {
       return { type: 'validation', errors: [err] };
@@ -357,7 +357,7 @@ class Repository<T extends HasId & HasTimestamps> {
     let [item, err] = await goFetch<T>(`/api/items/${id}`);
     if (err) return [null, err] as const;
 
-    let [processed, err] = go(() => {
+    let [processed, err] = goSync(() => {
       // We can safely access id, createdAt, and updatedAt
       // because of the constraints
       return {
@@ -447,7 +447,7 @@ const items = Array.from({ length: 100 }, (_, i) => i);
 let [results, err] = await batchProcess(
   items,
   async (item) => {
-    let [result, err] = await go(processItem(item));
+    let [result, err] = await goSync(() => processItem(item));
     return [result, err] as const;
   },
   20 // Process 20 items at a time

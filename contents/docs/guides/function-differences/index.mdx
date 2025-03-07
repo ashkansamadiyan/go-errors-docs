@@ -1,169 +1,196 @@
 ---
-title: "Understanding go, goSync, and goAsync"
+title: "Understanding goSync and goFetch"
 description: "Learn when and how to use each function variant effectively"
 ---
 
-This guide explains the differences between the three main functions provided by go-errors: `go`, `goSync`, and `goAsync`.
+This guide explains the differences between the two main functions provided by go-errors: `goSync` and `goFetch`.
 
 ## Overview
 
 ```typescript
-import { go, goSync, goAsync } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
-// go: Universal function that handles both sync and async operations
-let [result1, err1] = await go(operation);
+// goSync: For synchronous operations
+let [result1, err1] = goSync(() => syncOperation());
 
-// goSync: Specifically for synchronous operations
-let [result2, err2] = goSync(syncOperation);
-
-// goAsync: Specifically for asynchronous operations
-let [result3, err3] = await goAsync(asyncOperation);
+// goFetch: For HTTP requests with enhanced features
+let [result2, err2] = await goFetch('/api/data');
 ```
 
-## The `go` Function
+## The `goSync` Function
 
-The `go` function is the universal solution that handles both synchronous and asynchronous operations.
+The `goSync` function is designed for synchronous operations and returns results immediately.
 
 ```typescript
-// Handling synchronous operations
-let [syncResult, err] = await go(() => {
+// Basic usage
+let [result, err] = goSync(() => {
   return "hello";
 });
 
-// Handling asynchronous operations
-let [asyncResult, err] = await go(async () => {
-  return await fetch("https://api.example.com/data");
+// With error handling
+let [result, err] = goSync(() => {
+  if (!isValid()) {
+    throw new Error("Invalid state");
+  }
+  return "success";
 });
 
-// Handling promises directly
-let [promiseResult, err] = await go(
-  Promise.resolve("hello")
-);
+// With type parameters
+let [num, err] = goSync<number, ValidationError>(() => {
+  if (input < 0) {
+    throw new ValidationError("input", "Must be positive");
+  }
+  return input * 2;
+});
 ```
 
 ### Type Inference
 
 ```typescript
-// go infers return types correctly
-let [num, err] = await go(() => 42);
-// num is number | null
-// err is Error | null
-
-let [str, err] = await go(async () => "hello");
-// str is string | null
-// err is Error | null
-```
-
-## The `goSync` Function
-
-`goSync` is optimized for synchronous operations and returns results immediately without requiring `await`.
-
-```typescript
-// Basic usage
-let [result, err] = goSync(() => {
-  return "hello";
-});
-
-// Type inference
+// goSync infers return types correctly
 let [num, err] = goSync(() => 42);
 // num is number | null
 // err is Error | null
 
-// Error handling
-let [result, err] = goSync(() => {
-  throw new Error("Something went wrong");
-});
-// result is null
-// err is Error
+let [user, err] = goSync(() => ({
+  id: 1,
+  name: "John"
+}));
+// user is { id: number, name: string } | null
+// err is Error | null
 ```
 
 ### When to Use `goSync`
 
 1. For purely synchronous operations
-2. When you want to avoid the async overhead
-3. When you need immediate results without awaiting
+2. When you need immediate results
+3. For data validation and transformation
+4. For error handling in synchronous code
 
 ```typescript
 // ✅ Good use cases for goSync
-const [parsed, parseError] = goSync(() => JSON.parse(jsonString));
-const [result, mathError] = goSync(() => complexMathCalculation());
-const [value, validationError] = goSync(() => validateInput(userInput));
+const [parsed, parseErr] = goSync(() => JSON.parse(jsonString));
+const [result, mathErr] = goSync(() => complexMathCalculation());
+const [valid, validationErr] = goSync(() => validateInput(userInput));
 ```
 
-## The `goAsync` Function
+## The `goFetch` Function
 
-`goAsync` is specifically designed for handling promises and async operations.
+`goFetch` is a powerful wrapper around the Fetch API that provides type-safe HTTP requests with built-in transformation capabilities.
 
 ```typescript
 // Basic usage
-const [result, error] = await goAsync(
-  fetch("https://api.example.com/data")
-);
+let [data, err] = await goFetch('/api/data');
 
-// With async functions
-const [result, error] = await goAsync(async () => {
-  const response = await fetch("https://api.example.com/data");
-  return response.json();
+// With type parameters
+interface User {
+  id: number;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    ...data,
+    fullName: `${data.firstName} ${data.lastName}`
+  })
 });
 
-// Type inference
-const [data, err] = await goAsync(Promise.resolve({ id: 1 }));
-// data is { id: number } | null
-// err is Error | null
+// With error transformation
+interface ApiError {
+  code: string;
+  message: string;
+  details?: unknown;
+}
+
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText
+      };
+    }
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+});
 ```
 
-### When to Use `goAsync`
+### When to Use `goFetch`
 
-1. For promise-based operations
-2. When working with async/await functions
-3. When handling network requests
+1. For making HTTP requests
+2. When you need response transformation
+3. When you need type-safe API calls
+4. When you want consistent error handling for HTTP requests
 
 ```typescript
-// ✅ Good use cases for goAsync
-const [data, fetchError] = await goAsync(fetchData());
-const [user, dbError] = await goAsync(database.query());
-const [result, streamError] = await goAsync(processStream());
+// ✅ Good use cases for goFetch
+const [user, err] = await goFetch<User>('/api/user/123');
+const [posts, err] = await goFetch<Post[]>('/api/posts');
+const [settings, err] = await goFetch<Settings>('/api/settings');
 ```
 
 ## Performance Considerations
 
-### `go` vs `goSync`
+### `goSync` vs Direct Try-Catch
 
 ```typescript
-// ❌ Less efficient: Using go for sync operations
-const [result1, error1] = await go(() => syncOperation());
+// ❌ Less maintainable: Using try-catch
+try {
+  const result = syncOperation();
+  return [result, null];
+} catch (error) {
+  return [null, error];
+}
 
-// ✅ More efficient: Using goSync for sync operations
-const [result2, error2] = goSync(() => syncOperation());
+// ✅ More maintainable: Using goSync
+const [result, error] = goSync(() => syncOperation());
 ```
 
-### `go` vs `goAsync`
+### `goFetch` vs Manual Fetch
 
 ```typescript
-// Both are equally efficient for async operations
-const [result1, error1] = await go(asyncOperation());
-const [result2, error2] = await goAsync(asyncOperation());
+// ❌ Less maintainable: Manual fetch handling
+try {
+  const response = await fetch('/api/user');
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  const data = await response.json();
+  return [data, null];
+} catch (error) {
+  return [null, error];
+}
+
+// ✅ More maintainable: Using goFetch
+const [data, error] = await goFetch<User>('/api/user');
 ```
 
 ## Type Safety
 
-All three functions provide strong TypeScript support:
+Both functions provide strong TypeScript support:
 
 ```typescript
-// Type inference works for all functions
-const [num1, err1] = goSync(() => 42);
-const [num2, err2] = await go(() => 42);
-const [num3, err3] = await goAsync(Promise.resolve(42));
+// Type inference with goSync
+const [num, err1] = goSync(() => 42);
+const [str, err2] = goSync(() => "hello");
 
-// Generic type parameters
+// Generic type parameters with goFetch
 interface User {
   id: number;
   name: string;
 }
 
-const [user1, err4] = goSync<User>(() => ({ id: 1, name: "John" }));
-const [user2, err5] = await go<User>(() => ({ id: 1, name: "John" }));
-const [user3, err6] = await goAsync<User>(Promise.resolve({ id: 1, name: "John" }));
+interface ApiError {
+  code: string;
+  message: string;
+}
+
+const [user, err] = await goFetch<User, ApiError>('/api/user/123');
 ```
 
 ## Best Practices
@@ -171,37 +198,43 @@ const [user3, err6] = await goAsync<User>(Promise.resolve({ id: 1, name: "John" 
 1. **Choose the Right Function**
    ```typescript
    // ✅ Good: Using appropriate functions
-   const [syncResult] = goSync(() => JSON.parse(data));
-   const [asyncResult] = await goAsync(fetch(url));
-   const [result] = await go(maybeAsyncOperation());
+   const [parsed, err1] = goSync(() => JSON.parse(data));
+   const [user, err2] = await goFetch<User>('/api/user/123');
    ```
 
-2. **Consistent Error Handling**
+2. **Use Type Parameters**
    ```typescript
-   // ✅ Good: Consistent error handling pattern
-   const [result, error] = await go(operation());
-   if (error) {
-     handleError(error);
-     return;
-   }
-   useResult(result);
+   // ✅ Good: Explicit type parameters
+   const [user, err] = await goFetch<User, ApiError>('/api/user/123');
+
+   // ❌ Bad: Implicit any
+   const [data, err] = await goFetch('/api/user/123');
    ```
 
-3. **Type Safety**
+3. **Transform Responses**
    ```typescript
-   // ✅ Good: Explicit typing when needed
-   interface ApiResponse<T> {
-     data: T;
-     meta: { timestamp: number };
-   }
-   
-   const [response, error] = await goAsync<ApiResponse<User>>(
-     fetchUser(userId)
-   );
+   // ✅ Good: Transform and validate responses
+   const [user, err] = await goFetch<User>('/api/user', {
+     responseTransformer: (data) => ({
+       ...data,
+       fullName: `${data.firstName} ${data.lastName}`
+     })
+   });
    ```
 
-## Related
+4. **Handle Errors Consistently**
+   ```typescript
+   // ✅ Good: Consistent error handling
+   const [data, err] = await goFetch<User, ApiError>('/api/user', {
+     errorTransformer: (error) => ({
+       code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
+       message: error instanceof Error ? error.message : String(error)
+     })
+   });
+   ```
 
-- [Error Handling Guide](/docs/guides/error-handling) - Basic error handling patterns
-- [Async Patterns Guide](/docs/guides/async-patterns) - Advanced async usage
-- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices 
+## See Also
+
+- [Error Handling](/docs/guides/error-handling)
+- [Type Safety](/docs/guides/type-safety)
+- [HTTP Requests](/docs/guides/http-requests)
