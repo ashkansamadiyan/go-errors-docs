@@ -17,21 +17,7 @@ export const ROUTES: EachRoute[] = [
       { title: "Introduction", href: "/introduction" },
       { title: "Installation", href: "/installation" },
       { title: "Quick Start Guide", href: "/quick-start-guide" },
-      { title: "Core Concepts", href: "/core-concepts" },
-      {
-        title: "Components",
-        href: "/components",
-        noLink: true,
-        items: [
-          { title: "Code Block", href: "/code-block" },
-          { title: "Custom", href: "/custom" },
-          { title: "File System", href: "/file-system" },
-          { title: "Image Link", href: "/image-link" },
-          { title: "Note", href: "/note" },
-          { title: "Stepper", href: "/stepper" },
-          { title: "Tabs", href: "/tabs" },
-        ],
-      },
+      { title: "Core Concepts", href: "/core-concepts" }
     ],
   },
   {
@@ -40,21 +26,36 @@ export const ROUTES: EachRoute[] = [
     noLink: true,
     items: [
       { title: "Core Functions", href: "/core-functions" },
+      { title: "Types", href: "/types" },
       { title: "Error Handling", href: "/error-handling" },
       { title: "Go", href: "/go" },
-      { title: "Go Fetch", href: "/go-fetch" },
-      { title: "Go Fetch Options", href: "/go-fetch-options" },
-      {
-        title: "HTTP",
-        href: "/http",
-        noLink: true,
-        items: [
-          { title: "Go Fetch", href: "/go-fetch" },
-          { title: "Go Fetch Options", href: "/go-fetch-options" },
-        ],
-      },
-      { title: "Types", href: "/types" },
-      { title: "Unified Go", href: "/unified-go" },
+      { title: "goFetch", href: "/goFetch" },
+      { title: "Unified Go", href: "/unified-go" }
+    ],
+  },
+  {
+    title: "Guides",
+    href: "/guides",
+    noLink: true,
+    items: [
+      // Basic Concepts
+      { title: "Basic Usage", href: "/basic-usage" },
+      { title: "HTTP Requests", href: "/http-requests" },
+      
+      // Advanced Topics
+      { title: "Advanced Features", href: "/advanced-features" },
+      { title: "Advanced Patterns", href: "/advanced-patterns" },
+      { title: "Best Practices", href: "/best-practices" },
+      
+      // Error Handling
+      { title: "Error Handling", href: "/error-handling" },
+      { title: "Error Normalization", href: "/error-normalization" },
+      { title: "Edge Cases", href: "/edge-cases" },
+      { title: "Type Safety", href: "/type-safety" },
+      
+      // Async Programming
+      { title: "Async Patterns", href: "/async-patterns" },
+      { title: "Function Differences", href: "/function-differences" }
     ],
   },
   {
@@ -64,70 +65,22 @@ export const ROUTES: EachRoute[] = [
     items: [
       { title: "Basic Usage", href: "/basic-usage" },
       { title: "Error Propagation", href: "/error-propagation" },
-      { title: "Custom Error Types", href: "/custom-error-types" },
+      { title: "Custom Error Types", href: "/custom-error-types" }
     ],
-  },
-  {
-    title: "Guides",
-    href: "/guides",
-    noLink: true,
-    items: [
-      { title: "Advanced Features", href: "/advanced-features" },
-      { title: "Advanced Patterns", href: "/advanced-patterns" },
-      { title: "Async Patterns", href: "/async-patterns" },
-      { title: "Basic Usage", href: "/basic-usage" },
-      { title: "Best Practices", href: "/best-practices" },
-      { title: "Edge Cases", href: "/edge-cases" },
-      { title: "Error Handling", href: "/error-handling" },
-      { title: "Error Normalization", href: "/error-normalization" },
-      { title: "Function Differences", href: "/function-differences" },
-      { title: "HTTP Requests", href: "/http-requests" },
-      { title: "Type Safety", href: "/type-safety" },
-      { title: "Type System", href: "/type-system" },
-    ],
-  },
-  {
-    title: "Blog",
-    href: "/blog",
-    items: [
-      {
-        title: "Why Go-Style Error Handling",
-        href: "/why-go-style-error-handling",
-      },
-      {
-        title: "Cleaner Code with Early Returns",
-        href: "/cleaner-code-with-early-returns",
-      },
-    ],
-  },
+  }
 ];
 
 type Page = { title: string; href: string };
 
-function getRecurrsiveAllLinks(
-  node: EachRoute,
-  parentPath: string = "",
-): Page[] {
+function getRecurrsiveAllLinks(node: EachRoute) {
   const ans: Page[] = [];
-  const currentPath = parentPath + node.href;
-
   if (!node.noLink) {
-    ans.push({ title: node.title, href: `/docs${currentPath}` });
+    ans.push({ title: node.title, href: node.href });
   }
-
   node.items?.forEach((subNode) => {
-    if (!subNode.noLink) {
-      ans.push({
-        title: subNode.title,
-        href: `/docs${currentPath}${subNode.href}`,
-      });
-    }
-
-    if (subNode.items) {
-      ans.push(...getRecurrsiveAllLinks(subNode, currentPath));
-    }
+    const temp = { ...subNode, href: `${node.href}${subNode.href}` };
+    ans.push(...getRecurrsiveAllLinks(temp));
   });
-
   return ans;
 }
 

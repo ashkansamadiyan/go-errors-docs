@@ -1,59 +1,47 @@
----
-title: Introduction
-description: A TypeScript library that brings Go-style error handling to JavaScript/TypeScript.
----
+# Introduction to go-errors
 
-# go-errors
+A lightweight, type-safe TypeScript library that brings Go-style error handling to JavaScript/TypeScript. Say goodbye to try-catch blocks and hello to elegant, functional error handling!
 
-<div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem' }}>
-  <a href="https://www.npmjs.com/package/go-errors">
-    <img src="https://img.shields.io/npm/v/go-errors?style=flat-square" alt="npm version" />
-  </a>
-  <a href="https://www.typescriptlang.org/">
-    <img src="https://img.shields.io/badge/TypeScript-4.9+-blue?style=flat-square" alt="TypeScript" />
-  </a>
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-yellow.svg?style=flat-square" alt="License: MIT" />
-  </a>
-</div>
+## Why go-errors?
 
-Welcome to the **go-errors** documentation! This library brings Go-style error handling to JavaScript/TypeScript, allowing you to handle errors elegantly without try-catch blocks, using a functional approach that's both type-safe and intuitive.
+- 🎯 **Type-safe**: Full TypeScript support with precise type inference
+- 🔄 **Unified API**: Same pattern for both sync and async operations
+- 🌐 **Enhanced Fetch**: Built-in `goFetch` with powerful transformers and type safety
+- 🪶 **Lightweight**: Zero dependencies, minimal overhead
+- 🔒 **Immutable**: Results are readonly tuples
+- 🎨 **Flexible**: Support for custom error types
+- 📦 **Tree-shakeable**: Only import what you need
+- 🔍 **Predictable**: No more try-catch spaghetti code
+- 🚀 **Fast**: Minimal runtime overhead
+- 💡 **Intuitive**: Familiar pattern for Go developers
 
-## Key Features
+## Quick Start
 
-- 🎯 **Type-safe** error handling with full TypeScript support
-- 🔄 **Go-style** result tuples `[value, error]`
-- ⚡ **Zero dependencies** and lightweight
-- 🔀 **Unified API** for both synchronous and asynchronous operations
-- 🌐 **Enhanced Fetch** with built-in transformers and type safety
-- 🛡️ **Predictable error handling** without try-catch blocks
-- 📦 **Tree-shakeable** and optimized for bundle size
-
-## Quick Installation
+First, install the library:
 
 ```bash
 bun add go-errors
 ```
 
-## Basic Usage
+Then, start using it in your code:
 
 ```typescript
-import { goSync, goFetch } from 'go-errors';
+import { go, goFetch } from 'go-errors';
 
 // Synchronous usage
 let [value, err] = goSync(() => {
-  // Your code that might throw
-  return "success";
+  if (Math.random() > 0.5) throw new Error('Bad luck!');
+  return 42;
 });
 
 if (err) {
-  console.error("Something went wrong:", err.message);
+  console.error('Something went wrong:', err);
 } else {
-  console.log("Got value:", value);
+  console.log('Got value:', value);
 }
 
-// Asynchronous usage with goFetch
-let [data, err] = await goFetch<User>('/api/user/123', {
+// Using goFetch for API calls
+let [data, err] = await goFetch<User>('/api/user', {
   responseTransformer: (data) => ({
     ...data,
     fullName: `${data.firstName} ${data.lastName}`
@@ -61,44 +49,67 @@ let [data, err] = await goFetch<User>('/api/user/123', {
 });
 
 if (err) {
-  console.error("API call failed:", err.message);
+  console.error('Failed to fetch:', err);
 } else {
-  console.log("User data:", data);
+  console.log('Got data:', data);
 }
 ```
 
-## Why go-errors?
+## Core Concepts
 
-Traditional error handling in JavaScript/TypeScript often relies on try-catch blocks, which can lead to:
-- Verbose and nested code structures
-- Easy-to-miss error cases
-- Mixing of error handling and business logic
-- Type safety challenges
+The library is built around a few key concepts that make error handling in TypeScript/JavaScript more elegant and type-safe:
 
-**go-errors** solves these problems by:
-1. Providing a consistent, functional approach to error handling
-2. Ensuring type safety through TypeScript
-3. Separating error handling from business logic
-4. Making error cases explicit and impossible to ignore
-5. Supporting both synchronous and asynchronous operations with a unified API
-6. Providing powerful fetch capabilities with built-in transformers
+### Result Type
+
+The core of the library is the `Result` type, which is a tuple-based type similar to Go's multiple return values:
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+This means a function will always return either:
+- `[value, null]` for success
+- `[null, error]` for failure
+
+### Variable Declaration Style
+
+Following Go's convention, we use `let` instead of `const` for result declarations:
+
+```typescript
+// ✅ Recommended: Using let
+let [value, err] = goSync(() => someOperation());
+if (err) return handleError(err);
+
+let [result, err] = goSync(() => anotherOperation());
+if (err) return handleError(err);
+
+// ❌ Not recommended: Using const
+const [data, error] = goSync(() => operation()); // Less idiomatic
+```
+
+This allows you to reuse the error variable name (typically `err`) throughout your code, just like in Go.
+
+### Enhanced Fetch Support
+
+The library now includes a powerful `goFetch` function that provides type-safe API calls with built-in transformation capabilities:
+
+```typescript
+let [user, err] = await goFetch<User>('/api/user/123', {
+  responseTransformer: (data) => ({
+    id: data.id,
+    name: `${data.firstName} ${data.lastName}`
+  }),
+  errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
+});
+
+if (err?.code === 'API_RATE_LIMIT') {
+  // Handle specific error type
+}
+```
 
 ## Next Steps
 
-To get started with go-errors, check out:
-- [Quick Start Guide](/docs/getting-started/quick-start-guide) - Learn the basics in 5 minutes
-- [Core Concepts](/docs/getting-started/core-concepts) - Understand the fundamental concepts
-- [API Reference](/docs/api-reference) - Detailed API documentation
-- [Examples](/docs/examples) - Real-world usage examples
-
-## Open Source
-
-go-errors is proudly open-source! We welcome contributions from the community. Check out our [GitHub repository](https://github.com/ashkansamadiyan/go-style-errors) to:
-- Report issues
-- Submit pull requests
-- Suggest improvements
-- Help with documentation
-
-<Note title="Getting Help">
-Need help? Join our community discussions on GitHub or reach out through issues.
-</Note>
+- Check out the [Installation Guide](/docs/getting-started/installation) for detailed setup instructions
+- Learn about [Basic Usage](/docs/guides/basic-usage) patterns
+- Explore [Advanced Features](/docs/guides/advanced-features) for more complex scenarios
+- View the complete [API Reference](/docs/api-reference/go) for detailed documentation 

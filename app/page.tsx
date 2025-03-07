@@ -1,6 +1,6 @@
 import { buttonVariants } from "@/components/ui/button";
 import { page_routes } from "@/lib/routes-config";
-import { MoveUpRightIcon } from "lucide-react";
+import { MoveUpRightIcon, TerminalSquareIcon } from "lucide-react";
 import Link from "next/link";
 
 export default function Home() {
@@ -38,7 +38,11 @@ export default function Home() {
         >
           View Examples
         </Link>
+
+
+  
       </div>
+
       
       <div className="mt-8 grid sm:grid-cols-3 grid-cols-1 gap-6 max-w-[800px]">
         <div className="p-6 border rounded-lg">
@@ -54,6 +58,11 @@ export default function Home() {
           <p className="text-muted-foreground">Consistent error handling for both sync and async operations</p>
         </div>
       </div>
+
+      <span className="sm:flex hidden flex-row items-start sm:gap-2 gap-0.5 text-muted-foreground text-md mt-9 -mb-12 max-[800px]:mb-12 font-code sm:text-base text-sm font-medium border rounded-full p-2.5 px-5 bg-muted/55">
+        <TerminalSquareIcon className="w-5 h-5 sm:mr-1 mt-0.5" />
+        {"npm install go-errors"}
+      </span>
     </div>
   );
 }

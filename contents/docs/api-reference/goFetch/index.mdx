@@ -1,3 +1,8 @@
+---
+title: "goFetch Function"
+description: "A powerful wrapper around the Fetch API that provides Go-style error handling and built-in transformation capabilities"
+---
+
 # goFetch Function
 
 The `goFetch` function is a powerful wrapper around the Fetch API that provides Go-style error handling and built-in transformation capabilities.
@@ -157,13 +162,13 @@ interface CreateUserResponse {
 
 let [newUser, err] = await goFetch<CreateUserResponse>('/api/users', {
   method: 'POST',
-      headers: {
-    'Content-Type': 'application/json',
-      },
+  headers: {
+    'Content-Type': 'application/json'
+  },
   body: JSON.stringify({
     firstName: 'John',
     lastName: 'Doe',
-    email: 'john@example.com',
+    email: 'john@example.com'
   } as CreateUserRequest),
   responseTransformer: (data) => ({
     ...data,
@@ -171,7 +176,7 @@ let [newUser, err] = await goFetch<CreateUserResponse>('/api/users', {
   })
 });
 
-  if (err) {
+if (err) {
   console.error('Failed to create user:', err);
   return;
 }
@@ -180,7 +185,8 @@ console.log('Created user:', newUser);
 
 ## Best Practices
 
-1. Always use `let` for result declarations:
+### 1. Always use `let` for result declarations
+
 ```typescript
 // ✅ Good: Using let
 let [data, err] = await goFetch('/api/data');
@@ -190,7 +196,8 @@ if (err) return [null, err] as const;
 const [data, error] = await goFetch('/api/data');
 ```
 
-2. Always check for errors before using the result:
+### 2. Always check for errors before using the result
+
 ```typescript
 // ✅ Good: Check errors first
 let [user, err] = await goFetch<User>('/api/user/123');
@@ -205,17 +212,19 @@ let [user, err] = await goFetch<User>('/api/user/123');
 console.log('User:', user); // user might be null!
 ```
 
-3. Use type parameters for better type safety:
-   ```typescript
+### 3. Use type parameters for better type safety
+
+```typescript
 // ✅ Good: Explicit types
 let [user, err] = await goFetch<User, ApiError>('/api/user/123');
-   
-   // ❌ Bad: Implicit any
-let [data, err] = await goFetch('/api/user/123');
-   ```
 
-4. Use transformers to ensure consistent data shape:
-   ```typescript
+// ❌ Bad: Implicit any
+let [data, err] = await goFetch('/api/user/123');
+```
+
+### 4. Use transformers to ensure consistent data shape
+
+```typescript
 // ✅ Good: Transform response data
 let [user, err] = await goFetch<User>('/api/user/123', {
   responseTransformer: (data) => ({
@@ -223,7 +232,7 @@ let [user, err] = await goFetch<User>('/api/user/123', {
     fullName: `${data.firstName} ${data.lastName}`
   })
 });
-   
+
 // ❌ Bad: Manual transformation after fetch
 let [data, err] = await goFetch('/api/user/123');
 if (err) return [null, err] as const;
@@ -233,8 +242,9 @@ const user = {
 };
 ```
 
-5. Use error transformers for consistent error handling:
-   ```typescript
+### 5. Use error transformers for consistent error handling
+
+```typescript
 // ✅ Good: Transform errors
 let [data, err] = await goFetch<User, ApiError>('/api/user', {
   errorTransformer: (error) => ({
@@ -248,11 +258,9 @@ let [data, err] = await goFetch('/api/user');
 if (err) {
   if (err instanceof Response) {
     // Handle response error
-  } else if (err instanceof Error) {
-    // Handle error
   }
 }
-   ```
+```
 
 ## See Also
 
