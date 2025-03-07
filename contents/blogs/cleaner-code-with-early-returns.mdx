@@ -58,32 +58,52 @@ I once spent hours debugging an issue in a similar function, only to realize tha
 Enter early returns - a pattern that flips this approach on its head. Instead of nesting conditions deeper and deeper, we validate and return early when something's wrong. When combined with `go-errors`, this creates a powerful and elegant solution:
 
 ```typescript
-import { go } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
-function processPayment(data: unknown) {
+interface PaymentData {
+  amount: number;
+  currency: string;
+}
+
+async function processPayment(data: unknown) {
   // Validate structure
-  if (!data || typeof data !== 'object') {
-    return [null, new ValidationError('Invalid data')] as const;
-  }
+  const [validated, structError] = goSync(() => {
+    if (!data || typeof data !== 'object') {
+      throw new ValidationError('data', 'Invalid data structure');
+    }
+    return data as Record<string, unknown>;
+  });
+  if (structError) return [null, structError] as const;
 
   // Validate amount
-  if (!('amount' in data) || typeof data.amount !== 'number') {
-    return [null, new ValidationError('Invalid amount')] as const;
-  }
-  if (data.amount <= 0) {
-    return [null, new ValidationError('Amount must be positive')] as const;
-  }
+  const [amount, amountError] = goSync(() => {
+    if (!('amount' in validated) || typeof validated.amount !== 'number') {
+      throw new ValidationError('amount', 'Invalid amount');
+    }
+    if (validated.amount <= 0) {
+      throw new ValidationError('amount', 'Amount must be positive');
+    }
+    return validated.amount;
+  });
+  if (amountError) return [null, amountError] as const;
 
   // Validate currency
-  if (!('currency' in data) || typeof data.currency !== 'string') {
-    return [null, new ValidationError('Missing currency')] as const;
-  }
-  if (!['USD', 'EUR'].includes(data.currency)) {
-    return [null, new ValidationError('Invalid currency')] as const;
-  }
+  const [currency, currencyError] = goSync(() => {
+    if (!('currency' in validated) || typeof validated.currency !== 'string') {
+      throw new ValidationError('currency', 'Missing currency');
+    }
+    if (!['USD', 'EUR'].includes(validated.currency)) {
+      throw new ValidationError('currency', 'Invalid currency');
+    }
+    return validated.currency;
+  });
+  if (currencyError) return [null, currencyError] as const;
 
   // Process payment
-  return go(() => chargePayment(data.amount, data.currency));
+  return goFetch<PaymentResult>('/api/payments', {
+    method: 'POST',
+    body: JSON.stringify({ amount, currency })
+  });
 }
 ```
 
@@ -92,6 +112,8 @@ Look at how much clearer this is! Each validation is a single level, with a clea
 - Simple to modify or add new validations
 - Clear about what's being checked
 - Self-documenting
+
+For more advanced validation patterns and error handling, check out our [Error Handling Guide](/docs/guides/error-handling) and [Edge Cases Guide](/docs/guides/edge-cases).
 
 ## Real-World Success Stories
 
@@ -129,20 +151,47 @@ The impact was immediate:
 One of the most common use cases for early returns is form validation. Here's a pattern that has served us well:
 
 ```typescript
-function validateForm(input: unknown) {
-  // Check structure
-  if (!input || typeof input !== 'object') {
-    return [null, new FormError('Invalid input')] as const;
-  }
+interface FormData {
+  email: string;
+  password: string;
+}
 
-  // Check email
-  const email = (input as any).email;
-  if (!email || !email.includes('@')) {
-    return [null, new FormError('Invalid email')] as const;
-  }
+function validateForm(input: unknown): Result<FormData, ValidationError> {
+  // Structure validation
+  const [validated, structError] = goSync(() => {
+    if (!input || typeof input !== 'object') {
+      throw new ValidationError('form', 'Invalid input structure');
+    }
+    return input as Record<string, unknown>;
+  });
+  if (structError) return [null, structError] as const;
+
+  // Email validation
+  const [email, emailError] = goSync(() => {
+    if (!validated.email || typeof validated.email !== 'string') {
+      throw new ValidationError('email', 'Email is required');
+    }
+    if (!validated.email.includes('@')) {
+      throw new ValidationError('email', 'Invalid email format');
+    }
+    return validated.email;
+  });
+  if (emailError) return [null, emailError] as const;
+
+  // Password validation
+  const [password, passwordError] = goSync(() => {
+    if (!validated.password || typeof validated.password !== 'string') {
+      throw new ValidationError('password', 'Password is required');
+    }
+    if (validated.password.length < 8) {
+      throw new ValidationError('password', 'Password too short');
+    }
+    return validated.password;
+  });
+  if (passwordError) return [null, passwordError] as const;
 
   // Success case
-  return [{ email }, null] as const;
+  return [{ email, password }, null] as const;
 }
 ```
 
@@ -151,6 +200,8 @@ This pattern has become our standard approach because it:
 - Keeps error messages close to their checks
 - Makes it easy to add new validations
 - Provides clear feedback for users
+
+For more examples of type-safe validation patterns, check out our [Type Safety Guide](/docs/guides/type-safety).
 
 ## Lessons from the Trenches
 
@@ -244,6 +295,8 @@ Early returns with `go-errors` isn't just a pattern - it's a philosophy about ho
 2. Return immediately on errors
 3. Keep the success path clean
 4. Use descriptive error types
+
+To learn more about the different functions available and when to use each one, check out our [Function Differences Guide](/docs/guides/function-differences). For handling asynchronous operations and HTTP requests, our [Async Patterns Guide](/docs/guides/async-patterns) provides comprehensive examples and best practices.
 
 The result? Code that's not just functional, but a joy to work with. Code that tells a story, that guides the reader through its logic naturally. Code that we can confidently modify, extend, and maintain.
 
