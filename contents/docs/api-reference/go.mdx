@@ -1,0 +1,188 @@
+# go Function
+
+The `go` function is the core utility of the library that handles both synchronous and asynchronous operations in a Go-style error handling pattern.
+
+## Type Signature
+
+```typescript
+function go<T, E = Error>(
+  fn: (() => T) | Promise<T>
+): Result<T, E>
+```
+
+Where:
+- `T`: The success value type
+- `E`: The error type (defaults to `Error`)
+- `Result<T, E>`: A readonly tuple of either `[T, null]` or `[null, E]`
+
+## Basic Usage
+
+### Synchronous Operations
+
+```typescript
+import { go } from 'go-errors';
+
+// Simple value return
+let [value, err] = go(() => {
+  return 42;
+});
+
+// With potential error
+let [result, err] = go(() => {
+  if (someCondition) throw new Error('Something went wrong');
+  return 'success';
+});
+
+if (err) {
+  console.error('Failed:', err);
+  return;
+}
+console.log('Success:', result);
+```
+
+### Asynchronous Operations
+
+```typescript
+import { go } from 'go-errors';
+
+// With Promises
+let [data, err] = await go(Promise.resolve('async data'));
+
+// With async functions
+let [result, err] = await go(async () => {
+  const response = await someAsyncOperation();
+  return response.data;
+});
+
+if (err) {
+  console.error('Async operation failed:', err);
+  return;
+}
+console.log('Async success:', result);
+```
+
+## Custom Error Types
+
+You can specify custom error types for more precise error handling:
+
+```typescript
+class ValidationError extends Error {
+  constructor(public field: string, message: string) {
+    super(message);
+  }
+}
+
+let [value, err] = go<number, ValidationError>(() => {
+  if (input < 0) {
+    throw new ValidationError('input', 'Must be positive');
+  }
+  return input * 2;
+});
+
+if (err) {
+  console.error(`Validation failed for ${err.field}: ${err.message}`);
+}
+```
+
+## Error Propagation
+
+The `go` function makes it easy to propagate errors up the call stack:
+
+```typescript
+function validateUser(user: User) {
+  let [isValid, err] = go(() => validateUserData(user));
+  if (err) return [null, err] as const;
+
+  let [saved, err] = go(() => saveUser(user));
+  if (err) return [null, err] as const;
+
+  return [saved, null] as const;
+}
+```
+
+## Best Practices
+
+1. **Use `let` for Declarations**
+   ```typescript
+   // ✅ Good: Reuse err variable
+   let [value, err] = go(() => operation1());
+   if (err) return handleError(err);
+
+   let [result, err] = go(() => operation2());
+   if (err) return handleError(err);
+   ```
+
+2. **Early Returns**
+   ```typescript
+   // ✅ Good: Early return pattern
+   let [data, err] = go(() => fetchData());
+   if (err) return [null, err] as const;
+
+   // Continue processing data...
+   ```
+
+3. **Type Safety**
+   ```typescript
+   // ✅ Good: Explicit type parameters
+   let [user, err] = go<User, ApiError>(() => fetchUser(id));
+   ```
+
+## Common Patterns
+
+### Sequential Operations
+
+```typescript
+async function processUser(userId: string) {
+  let [user, err] = await go(fetchUser(userId));
+  if (err) return [null, err] as const;
+
+  let [validated, err] = go(() => validateUser(user));
+  if (err) return [null, err] as const;
+
+  let [saved, err] = await go(saveUser(validated));
+  if (err) return [null, err] as const;
+
+  return [saved, null] as const;
+}
+```
+
+### Error Transformation
+
+```typescript
+let [data, err] = await go(async () => {
+  try {
+    const response = await fetch('https://api.example.com');
+    if (!response.ok) {
+      throw new ApiError(response.status, await response.text());
+    }
+    return await response.json();
+  } catch (error) {
+    if (error instanceof ApiError) throw error;
+    throw new ApiError(500, 'Internal error');
+  }
+});
+```
+
+## Return Type Safety
+
+The `Result` type ensures type safety throughout your application:
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+
+// TypeScript will enforce correct typing
+let [value, err]: Result<number> = go(() => 42);
+if (err) {
+  // err is typed as Error
+  console.error(err.message);
+} else {
+  // value is typed as number
+  console.log(value.toFixed(2));
+}
+```
+
+## Related
+
+- [goFetch Function](/docs/api-reference/go-fetch) - For HTTP requests
+- [Error Handling Guide](/docs/guides/error-handling) - For more error handling patterns
+- [Type Safety Guide](/docs/guides/type-safety) - For advanced type safety usage 

@@ -1,0 +1,89 @@
+# Introduction to go-errors
+
+A lightweight, type-safe TypeScript library that brings Go-style error handling to JavaScript/TypeScript. Say goodbye to try-catch blocks and hello to elegant, functional error handling!
+
+## Why go-errors?
+
+- 🎯 **Type-safe**: Full TypeScript support with precise type inference
+- 🔄 **Unified API**: Same pattern for both sync and async operations
+- 🌐 **Fetch Support**: Built-in wrapper for fetch operations with transformers
+- 🪶 **Lightweight**: Zero dependencies, minimal overhead
+- 🔒 **Immutable**: Results are readonly tuples
+- 🎨 **Flexible**: Support for custom error types
+- 📦 **Tree-shakeable**: Only import what you need
+- 🔍 **Predictable**: No more try-catch spaghetti code
+- 🚀 **Fast**: Minimal runtime overhead
+- 💡 **Intuitive**: Familiar pattern for Go developers
+
+## Quick Start
+
+First, install the library:
+
+```bash
+bun add go-errors
+```
+
+Then, start using it in your code:
+
+```typescript
+import { go } from 'go-errors';
+
+// Synchronous usage
+let [value, err] = go(() => {
+  if (Math.random() > 0.5) throw new Error('Bad luck!');
+  return 42;
+});
+
+if (err) {
+  console.error('Something went wrong:', err);
+} else {
+  console.log('Got value:', value);
+}
+
+// Asynchronous usage
+let [data, err] = await go(fetch('https://api.example.com/data'));
+
+if (err) {
+  console.error('Failed to fetch:', err);
+} else {
+  console.log('Got data:', data);
+}
+```
+
+## Core Concepts
+
+The library is built around a few key concepts that make error handling in TypeScript/JavaScript more elegant and type-safe:
+
+### Result Type
+
+The core of the library is the `Result` type, which is a tuple-based type similar to Go's multiple return values:
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+This means a function will always return either:
+- `[value, null]` for success
+- `[null, error]` for failure
+
+### Variable Declaration Style
+
+Following Go's convention, we recommend using `let` instead of `const` for result declarations:
+
+```typescript
+// ✅ Recommended: Using let
+let [value, err] = go(() => someOperation());
+if (err) return handleError(err);
+
+let [result, err] = go(() => anotherOperation());
+if (err) return handleError(err);
+```
+
+This allows you to reuse the error variable name (typically `err`) throughout your code, just like in Go.
+
+## Next Steps
+
+- Check out the [Installation Guide](/docs/getting-started/installation) for detailed setup instructions
+- Learn about [Basic Usage](/docs/guides/basic-usage) patterns
+- Explore [Advanced Features](/docs/guides/advanced-features) for more complex scenarios
+- View the complete [API Reference](/docs/api-reference/go) for detailed documentation 

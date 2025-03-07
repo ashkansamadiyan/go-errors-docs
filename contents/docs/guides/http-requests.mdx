@@ -1,0 +1,372 @@
+# HTTP Requests Guide
+
+This guide covers making HTTP requests using the go-errors library, focusing on the `goFetch` function and common HTTP patterns.
+
+## Basic HTTP Requests
+
+### GET Request
+
+```typescript
+import { goFetch } from 'go-errors';
+
+// Simple GET request
+let [data, err] = await goFetch('https://api.example.com/data');
+if (err) {
+  console.error('Failed to fetch:', err);
+  return;
+}
+console.log('Got data:', data);
+
+// Typed GET request
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+let [user, err] = await goFetch<User>('https://api.example.com/user/1');
+if (err) {
+  console.error('Failed to fetch user:', err);
+  return;
+}
+console.log('User name:', user.name);
+```
+
+### POST Request
+
+```typescript
+interface CreateUserRequest {
+  name: string;
+  email: string;
+}
+
+interface CreateUserResponse {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: string;
+}
+
+let [newUser, err] = await goFetch<CreateUserResponse>(
+  'https://api.example.com/users',
+  {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      name: 'John Doe',
+      email: 'john@example.com',
+    } as CreateUserRequest),
+  }
+);
+
+if (err) {
+  console.error('Failed to create user:', err);
+  return;
+}
+console.log('Created user:', newUser);
+```
+
+## Advanced HTTP Patterns
+
+### Authentication
+
+```typescript
+// Bearer token authentication
+const authHeaders = {
+  'Authorization': `Bearer ${token}`,
+  'Content-Type': 'application/json',
+};
+
+let [data, err] = await goFetch<User>('https://api.example.com/me', {
+  headers: authHeaders,
+});
+
+// Basic authentication
+const basicAuth = btoa(`${username}:${password}`);
+let [data, err] = await goFetch<User>('https://api.example.com/me', {
+  headers: {
+    'Authorization': `Basic ${basicAuth}`,
+  },
+});
+
+// Cookie-based authentication
+let [data, err] = await goFetch<User>('https://api.example.com/me', {
+  credentials: 'include',  // Sends cookies
+});
+```
+
+### Request Transformation
+
+```typescript
+interface SearchParams {
+  query: string;
+  page: number;
+  limit: number;
+}
+
+function buildSearchUrl(params: SearchParams): string {
+  const searchParams = new URLSearchParams();
+  searchParams.set('q', params.query);
+  searchParams.set('page', params.page.toString());
+  searchParams.set('limit', params.limit.toString());
+  return `https://api.example.com/search?${searchParams.toString()}`;
+}
+
+let [results, err] = await goFetch<SearchResults>(buildSearchUrl({
+  query: 'typescript',
+  page: 1,
+  limit: 10,
+}));
+```
+
+### Response Transformation
+
+```typescript
+interface ApiResponse<T> {
+  data: T;
+  metadata: {
+    timestamp: string;
+    version: string;
+  };
+}
+
+interface ApiUser {
+  id: string;
+  user_name: string;
+  email_address: string;
+  created_at: string;
+}
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  createdAt: Date;
+}
+
+let [user, err] = await goFetch<User>('https://api.example.com/user/1', {
+  responseTransformer: (data: unknown): User => {
+    const response = data as ApiResponse<ApiUser>;
+    return {
+      id: parseInt(response.data.id, 10),
+      name: response.data.user_name,
+      email: response.data.email_address,
+      createdAt: new Date(response.data.created_at),
+    };
+  },
+});
+```
+
+### Error Handling
+
+```typescript
+interface ApiError {
+  code: number;
+  message: string;
+  details?: {
+    field: string;
+    error: string;
+  }[];
+}
+
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: (error: unknown): ApiError => {
+    // Handle Response errors
+    if (error instanceof Response) {
+      return {
+        code: error.status,
+        message: error.statusText,
+      };
+    }
+
+    // Handle network errors
+    if (error instanceof Error) {
+      return {
+        code: 0,
+        message: error.message,
+      };
+    }
+
+    // Handle unknown errors
+    return {
+      code: -1,
+      message: 'Unknown error occurred',
+    };
+  },
+});
+
+if (err) {
+  if (err.code === 404) {
+    console.error('User not found');
+  } else if (err.code === 401) {
+    console.error('Unauthorized');
+  } else {
+    console.error(`Error ${err.code}: ${err.message}`);
+  }
+  return;
+}
+```
+
+## Common Patterns
+
+### Retry Logic
+
+```typescript
+async function fetchWithRetry<T>(
+  url: string,
+  options?: RequestInit,
+  retries = 3,
+  delay = 1000
+): Promise<Result<T, Error>> {
+  let lastError: Error | null = null;
+
+  for (let i = 0; i < retries; i++) {
+    let [data, err] = await goFetch<T>(url, options);
+    if (!err) return [data, null] as const;
+
+    lastError = err;
+    if (i < retries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+
+  return [null, lastError] as const;
+}
+
+// Usage
+let [data, err] = await fetchWithRetry<User>(
+  'https://api.example.com/user/1',
+  undefined,
+  3,
+  1000
+);
+```
+
+### Parallel Requests
+
+```typescript
+async function fetchUserProfile(userId: string) {
+  const [
+    [user, userErr],
+    [posts, postsErr],
+    [settings, settingsErr]
+  ] = await Promise.all([
+    goFetch<User>(`/api/users/${userId}`),
+    goFetch<Post[]>(`/api/users/${userId}/posts`),
+    goFetch<Settings>(`/api/users/${userId}/settings`)
+  ]);
+
+  // Aggregate errors
+  const errors: Error[] = [];
+  if (userErr) errors.push(userErr);
+  if (postsErr) errors.push(postsErr);
+  if (settingsErr) errors.push(settingsErr);
+
+  if (errors.length > 0) {
+    return [null, new AggregateError(errors, 'Failed to fetch profile')] as const;
+  }
+
+  return [{
+    user,
+    posts,
+    settings
+  }, null] as const;
+}
+```
+
+### Sequential Requests
+
+```typescript
+async function createUserWithPreferences(
+  userData: CreateUserRequest,
+  preferences: UserPreferences
+) {
+  // Create user first
+  let [user, err] = await goFetch<User>('/api/users', {
+    method: 'POST',
+    body: JSON.stringify(userData),
+  });
+  if (err) return [null, err] as const;
+
+  // Then set preferences
+  let [prefs, err] = await goFetch<UserPreferences>(
+    `/api/users/${user.id}/preferences`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(preferences),
+    }
+  );
+  if (err) return [null, err] as const;
+
+  return [{
+    user,
+    preferences: prefs
+  }, null] as const;
+}
+```
+
+## Best Practices
+
+### 1. Type Safety
+
+```typescript
+// ✅ Good: Explicit types
+let [user, err] = await goFetch<User, ApiError>('/api/user');
+
+// ❌ Bad: Implicit any
+let [data, err] = await goFetch('/api/user');
+```
+
+### 2. Error Handling
+
+```typescript
+// ✅ Good: Proper error handling
+let [data, err] = await goFetch<User>('/api/user');
+if (err) {
+  // Handle error appropriately
+  return [null, err] as const;
+}
+
+// ❌ Bad: Ignoring errors
+let [data, err] = await goFetch<User>('/api/user');
+processUser(data); // data might be null!
+```
+
+### 3. Response Validation
+
+```typescript
+// ✅ Good: Validate response
+let [user, err] = await goFetch<User>('/api/user', {
+  responseTransformer: (data: unknown) => {
+    if (!isValidUser(data)) {
+      throw new Error('Invalid user data');
+    }
+    return data as User;
+  },
+});
+
+// ❌ Bad: No validation
+let [user, err] = await goFetch<User>('/api/user');
+```
+
+### 4. URL Construction
+
+```typescript
+// ✅ Good: Safe URL construction
+const url = new URL('https://api.example.com/search');
+url.searchParams.set('q', query);
+let [results, err] = await goFetch<SearchResults>(url);
+
+// ❌ Bad: String concatenation
+let [results, err] = await goFetch<SearchResults>(
+  `https://api.example.com/search?q=${query}`
+);
+```
+
+## Related
+
+- [goFetch Function](/docs/api-reference/go-fetch) - Full API reference
+- [Error Handling Guide](/docs/guides/error-handling) - Error handling patterns
+- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices 

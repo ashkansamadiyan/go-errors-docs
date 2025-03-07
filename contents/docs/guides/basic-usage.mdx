@@ -1,0 +1,369 @@
+# Basic Usage Guide
+
+This guide covers the basic usage patterns of the go-errors library. It's designed to help you get started quickly with Go-style error handling in TypeScript/JavaScript.
+
+## Installation
+
+Install the library using your preferred package manager:
+
+```bash
+# Using bun (recommended)
+bun add go-errors
+
+# Using npm
+npm install go-errors
+
+# Using yarn
+yarn add go-errors
+```
+
+## Quick Start
+
+### Basic Error Handling
+
+```typescript
+import { go } from 'go-errors';
+
+// Synchronous operation
+let [value, err] = go(() => {
+  if (Math.random() > 0.5) throw new Error('Bad luck!');
+  return 42;
+});
+
+if (err) {
+  console.error('Something went wrong:', err);
+} else {
+  console.log('Got value:', value);
+}
+
+// Asynchronous operation
+let [data, err] = await go(fetch('https://api.example.com/data'));
+if (err) {
+  console.error('Failed to fetch:', err);
+} else {
+  console.log('Got data:', data);
+}
+```
+
+## Core Concepts
+
+### The Result Type
+
+The library uses a tuple-based Result type:
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+This means every operation returns either:
+- `[value, null]` for success
+- `[null, error]` for failure
+
+### Variable Declaration
+
+Following Go's convention, use `let` for result declarations:
+
+```typescript
+// ✅ Good: Using let
+let [value, err] = go(() => someOperation());
+if (err) return handleError(err);
+
+let [result, err] = go(() => anotherOperation());
+if (err) return handleError(err);
+
+// ❌ Bad: Using const
+const [value1, error1] = go(() => someOperation());
+const [value2, error2] = go(() => anotherOperation());
+```
+
+## Basic Patterns
+
+### Synchronous Operations
+
+```typescript
+// Simple value return
+let [num, err] = go(() => 42);
+if (err) {
+  console.error(err);
+  return;
+}
+console.log(num); // 42
+
+// With error handling
+function divide(a: number, b: number) {
+  let [result, err] = go(() => {
+    if (b === 0) throw new Error('Division by zero');
+    return a / b;
+  });
+
+  if (err) return [null, err] as const;
+  return [result, null] as const;
+}
+
+// Usage
+let [value, err] = divide(10, 2);
+if (err) {
+  console.error('Division failed:', err);
+  return;
+}
+console.log('Result:', value); // 5
+```
+
+### Asynchronous Operations
+
+```typescript
+// With Promises
+let [data, err] = await go(Promise.resolve('async data'));
+if (err) {
+  console.error(err);
+  return;
+}
+console.log(data); // 'async data'
+
+// With async functions
+async function fetchUser(id: string) {
+  let [response, err] = await go(fetch(`/api/users/${id}`));
+  if (err) return [null, err] as const;
+
+  let [data, err] = await go(response.json());
+  if (err) return [null, err] as const;
+
+  return [data, null] as const;
+}
+
+// Usage
+let [user, err] = await fetchUser('123');
+if (err) {
+  console.error('Failed to fetch user:', err);
+  return;
+}
+console.log('User:', user);
+```
+
+### Error Propagation
+
+```typescript
+function validateData(data: unknown) {
+  let [validated, err] = go(() => {
+    if (typeof data !== 'object' || !data) {
+      throw new Error('Invalid data type');
+    }
+    return data;
+  });
+
+  if (err) return [null, err] as const;
+  return [validated, null] as const;
+}
+
+function processData(input: unknown) {
+  let [data, err] = validateData(input);
+  if (err) return [null, err] as const;
+
+  let [result, err] = go(() => {
+    // Process the validated data
+    return transform(data);
+  });
+
+  if (err) return [null, err] as const;
+  return [result, null] as const;
+}
+```
+
+### HTTP Requests
+
+```typescript
+// Simple GET request
+let [data, err] = await goFetch('https://api.example.com/data');
+if (err) {
+  console.error('Failed to fetch:', err);
+  return;
+}
+console.log('Got data:', data);
+
+// Typed request with error handling
+interface User {
+  id: number;
+  name: string;
+}
+
+let [user, err] = await goFetch<User>('/api/user/1');
+if (err) {
+  console.error('Failed to fetch user:', err);
+  return;
+}
+console.log('User name:', user.name);
+```
+
+## Common Use Cases
+
+### Form Validation
+
+```typescript
+interface FormData {
+  username: string;
+  email: string;
+  age: number;
+}
+
+function validateForm(data: unknown): Result<FormData, Error> {
+  let [validated, err] = go(() => {
+    const form = data as FormData;
+    
+    if (!form.username) {
+      throw new Error('Username is required');
+    }
+    if (!form.email.includes('@')) {
+      throw new Error('Invalid email');
+    }
+    if (form.age < 18) {
+      throw new Error('Must be 18 or older');
+    }
+
+    return form;
+  });
+
+  return [validated, err] as const;
+}
+
+// Usage
+let [form, err] = validateForm({
+  username: 'john',
+  email: 'john@example.com',
+  age: 25,
+});
+```
+
+### File Operations
+
+```typescript
+async function readJsonFile(path: string) {
+  let [content, err] = await go(fs.readFile(path, 'utf-8'));
+  if (err) return [null, err] as const;
+
+  let [data, err] = go(() => JSON.parse(content));
+  if (err) return [null, err] as const;
+
+  return [data, null] as const;
+}
+
+// Usage
+let [config, err] = await readJsonFile('config.json');
+if (err) {
+  console.error('Failed to read config:', err);
+  return;
+}
+```
+
+### Data Processing
+
+```typescript
+interface ProcessingResult {
+  processed: number;
+  skipped: number;
+}
+
+async function processItems(items: unknown[]): Promise<Result<ProcessingResult, Error>> {
+  let processed = 0;
+  let skipped = 0;
+
+  for (const item of items) {
+    let [result, err] = await go(processItem(item));
+    if (err) {
+      console.warn('Skipping item:', err);
+      skipped++;
+      continue;
+    }
+    processed++;
+  }
+
+  return [{
+    processed,
+    skipped,
+  }, null] as const;
+}
+```
+
+## Best Practices
+
+### 1. Always Check Errors
+
+```typescript
+// ✅ Good: Check errors immediately
+let [data, err] = go(() => operation());
+if (err) return handleError(err);
+
+// ❌ Bad: Ignoring errors
+let [data, err] = go(() => operation());
+useData(data); // data might be null!
+```
+
+### 2. Use Type Parameters
+
+```typescript
+// ✅ Good: Explicit types
+let [user, err] = go<User, ApiError>(() => fetchUser());
+
+// ❌ Bad: Implicit any
+let [data, err] = go(() => fetchData());
+```
+
+### 3. Consistent Error Handling
+
+```typescript
+// ✅ Good: Consistent pattern
+function processData(input: string) {
+  let [data, err] = go(() => parse(input));
+  if (err) return [null, err] as const;
+
+  let [result, err] = go(() => transform(data));
+  if (err) return [null, err] as const;
+
+  return [result, null] as const;
+}
+
+// ❌ Bad: Inconsistent pattern
+function processData(input: string) {
+  try {
+    let [data, err] = go(() => parse(input));
+    if (err) throw err; // Don't mix with try-catch
+
+    return transform(data);
+  } catch (error) {
+    return null;
+  }
+}
+```
+
+### 4. Early Returns
+
+```typescript
+// ✅ Good: Early returns
+function processUser(user: User) {
+  let [validated, err] = go(() => validateUser(user));
+  if (err) return [null, err] as const;
+
+  let [processed, err] = go(() => processUserData(validated));
+  if (err) return [null, err] as const;
+
+  return [processed, null] as const;
+}
+
+// ❌ Bad: Nested conditions
+function processUser(user: User) {
+  let [validated, err] = go(() => validateUser(user));
+  if (!err) {
+    let [processed, err] = go(() => processUserData(validated));
+    if (!err) {
+      return [processed, null] as const;
+    }
+    return [null, err] as const;
+  }
+  return [null, err] as const;
+}
+```
+
+## Related
+
+- [Error Handling Guide](/docs/guides/error-handling) - Advanced error handling patterns
+- [HTTP Guide](/docs/guides/http-requests) - Making HTTP requests
+- [Type Safety Guide](/docs/guides/type-safety) - Type safety best practices 
