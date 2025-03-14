@@ -1,23 +1,25 @@
 ---
-title: Custom Error Types
-description: Examples of using custom error types with go-errors
+title: Advanced Error Handling with Custom Error Types
+description: Learn how to enhance error handling in go-errors using custom error types for better type safety and context.
 ---
 
-# Custom Error Types
+# Advanced Error Handling with Custom Error Types
 
-This page demonstrates how to use custom error types with go-errors.
+One of the powerful features of **go-errors** is its support for custom error types. By defining your own error classes, you can create more type-safe and context-rich error handling logic. This section explores various examples of using custom error types to enhance your error management strategy.
 
-## Basic Custom Errors
+## 1. Defining Basic Custom Error Types
+
+You can start by creating simple custom error classes that extend the built-in `Error` class. This allows you to add specific properties or behaviors relevant to your application's domain.
 
 ```typescript
-import { goSync } from 'go-errors';
+import { goSync, goFetch } from 'go-errors';
 
 // Define custom error types
 class ValidationError extends Error {
   constructor(
     message: string,
     public field: string,
-    public value: unknown
+    public value: unknown // Add context-specific properties
   ) {
     super(message);
     this.name = 'ValidationError';
@@ -25,143 +27,147 @@ class ValidationError extends Error {
 }
 
 class NetworkError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public errorCode?: number) { // Add context-specific properties
     super(message);
     this.name = 'NetworkError';
   }
 }
 
-// Use custom error types
-function validateUser(user: unknown) {
-  let [result, err] = goSync<unknown, ValidationError>(() => {
-    if (!user || typeof user !== 'object') {
+// Example of using custom error types with goSync
+function validateUserName(name: unknown): [string | null, ValidationError | null] {
+  let [validatedName, err] = goSync<string, ValidationError>(() => {
+    if (typeof name !== 'string' || name.length < 3) {
       throw new ValidationError(
-        'Invalid user object',
-        'user',
-        user
+        'Username must be at least 3 characters long',
+        'username',
+        name
       );
     }
-    return user;
+    return name;
   });
 
   if (err) {
-    console.error(
-      `Validation failed: ${err.message}`,
-      `Field: ${err.field}`,
-      `Value: ${err.value}`
-    );
+    console.error(`Validation Error on field '${err.field}':`, err.message);
+    return [null, err];
   }
 
-  return [result, err] as const;
+  return [validatedName, null];
 }
 
-async function fetchUser(id: string) {
-  let [response, err] = await goFetch<User, NetworkError>(`/api/users/${id}`, {
-    errorTransformer: (error) => {
-      if (error instanceof Error) {
-        return new NetworkError(`Failed to fetch user: ${error.message}`);
+// Example of using custom error types with goFetch
+async function fetchUser(id: string): Promise<[User | null, NetworkError | null]> {
+  let [user, err] = await goFetch<User, NetworkError>(`/api/users/${id}`, {
+    errorTransformer: (error: any) => {
+      if (error instanceof Response) {
+        return new NetworkError(\`Failed to fetch user data: HTTP ${error.status} - ${error.statusText}\`, error.status);
       }
-      return new NetworkError('Unknown network error');
+      return new NetworkError('Failed to fetch user data due to a network issue.');
     }
   });
 
   if (err) {
-    return [null, err] as const;
+    console.error('Network Error:', err.message, err.errorCode ? `(Code: ${err.errorCode})` : '');
+    return [null, err];
   }
 
-  return [response, null] as const;
+  return [user, null];
 }
 ```
 
-## Error Type Hierarchies
+This example demonstrates how to create `ValidationError` and `NetworkError` classes with additional properties like `field`, `value`, and `errorCode` to provide more context about the error.
+
+## 2. Creating Error Type Hierarchies
+
+For more complex applications, you might benefit from creating hierarchies of error types. This allows for more granular error handling and type checking.
 
 ```typescript
 import { goSync, goFetch } from 'go-errors';
 
-// Base error class
+// Base application error
 class AppError extends Error {
-  constructor(
-    message: string,
-    public code: string,
-    public details?: unknown
-  ) {
+  constructor(message: string, public errorCode: string, public details?: any) {
     super(message);
     this.name = 'AppError';
   }
 }
 
-// Specific error types
+// Specific error types inheriting from AppError
 class DatabaseError extends AppError {
-  constructor(message: string, details?: unknown) {
+  constructor(message: string, details?: any) {
     super(message, 'DATABASE_ERROR', details);
     this.name = 'DatabaseError';
   }
 }
 
-class AuthError extends AppError {
+class AuthenticationError extends AppError {
   constructor(message: string) {
-    super(message, 'AUTH_ERROR');
-    this.name = 'AuthError';
+    super(message, 'AUTHENTICATION_ERROR');
+    this.name = 'AuthenticationError';
   }
 }
 
-// Using error hierarchies
-async function getUserData(userId: string) {
-  // Check authentication
-  let [session, err] = goSync<Session, AuthError>(() => checkAuth());
-  if (err) {
-    return [null, err] as const;
-  }
+interface Session { isValid: boolean; token: string | null }
+interface UserData { id: string; name: string }
 
-  // Fetch user data
-  let [userData, err] = await goFetch<UserData, DatabaseError>(`/api/users/${userId}`, {
-    headers: {
-      'Authorization': `Bearer ${session.token}`
-    },
-    errorTransformer: (error) => {
-      if (error instanceof Response) {
-        return new DatabaseError(
-          'Database query failed',
-          { status: error.status, body: error.statusText }
-        );
-      }
-      return new DatabaseError('Unknown database error');
+// Example using error hierarchies
+async function getUserData(userId: string): Promise<[UserData | null, AppError | null]> {
+  // Simulate authentication check
+  let [session, authErr] = goSync<Session, AuthenticationError>(() => {
+    const token = localStorage.getItem('authToken');
+    if (!token) {
+      throw new AuthenticationError('Authentication token missing.');
     }
+    return { isValid: true, token };
   });
-
-  if (err) {
-    return [null, err] as const;
+  if (authErr) {
+    console.error('Authentication Error:', authErr.message);
+    return [null, authErr];
   }
 
-  return [userData, null] as const;
-}
-
-// Error handling
-async function handleRequest(userId: string) {
-  let [data, err] = await getUserData(userId);
-  
-  if (err) {
-    if (err instanceof AuthError) {
-      return { status: 401, message: 'Authentication required' };
-    }
-    if (err instanceof DatabaseError) {
-      return { 
-        status: 500, 
-        message: 'Database error',
-        details: err.details
-      };
-    }
-    return { status: 500, message: 'Unknown error' };
+  // Fetch user data (simplified fetch for example)
+  let [userData, dbErr] = await goFetch<UserData, DatabaseError>(`/api/users/${userId}`, { // Assume goFetch is configured to return DatabaseError
+    errorTransformer: (error: any) => new DatabaseError('Database query failed.', error)
+  });
+  if (dbErr) {
+    console.error('Database Error:', dbErr.message, dbErr.details);
+    return [null, dbErr];
   }
 
-  return { status: 200, data };
+  return [userData, null];
 }
+
+async function main() {
+  let [userData, error] = await getUserData('123');
+  if (error) {
+    if (error instanceof AuthenticationError) {
+      // Handle authentication error specifically
+      console.log('Authentication required:', error.message);
+    } else if (error instanceof DatabaseError) {
+      // Handle database errors
+      console.error('Database issue:', error.message, error.details);
+    } else if (error instanceof AppError) {
+      // Handle other AppErrors
+      console.error('Application error:', error.message, error.errorCode);
+    } else {
+      // Fallback for unknown errors
+      console.error('An unexpected error occurred:', error.message);
+    }
+  } else {
+    console.log('User data:', userData);
+  }
+}
+
+main();
 ```
 
-## Error with Additional Context
+This example demonstrates creating an `AppError` base class and extending it with `DatabaseError` and `AuthenticationError`. This hierarchy allows for specific error handling based on the error type.
+
+## 3. Adding Context to Errors
+
+Custom error types can be enhanced by adding context-specific properties, which provide valuable information for debugging and error reporting.
 
 ```typescript
-import { goSync, goFetch } from 'go-errors';
+import { goSync } from 'go-errors';
 
 interface ValidationContext {
   field: string;
@@ -170,148 +176,53 @@ interface ValidationContext {
 }
 
 class ValidationError extends Error {
-  constructor(
-    message: string,
-    public context: ValidationContext
-  ) {
+  constructor(message: string, public context: ValidationContext) {
     super(message);
     this.name = 'ValidationError';
   }
 }
 
-function validateField(field: string, value: unknown, constraint: string) {
-  let [result, err] = goSync(() => {
-    if (!isValid(value, constraint)) {
+function validateInput(input: any): [string | null, ValidationError | null] {
+  let [validatedInput, err] = goSync<string, ValidationError>(() => {
+    if (typeof input !== 'string' || input.length < 5) {
       throw new ValidationError(
-        `Validation failed for ${field}`,
-        { field, value, constraint }
+        'Input must be a string of at least 5 characters',
+        { field: 'inputField', value: input, constraint: 'minLength:5' }
       );
     }
-    return value;
+    return input;
   });
 
   if (err instanceof ValidationError) {
-    console.error(
-      `Validation error: ${err.message}`,
-      `Field: ${err.context.field}`,
-      `Value: ${err.context.value}`,
-      `Constraint: ${err.context.constraint}`
-    );
+    console.error(`Validation Error: ${err.message} - Field: ${err.context.field}, Value: ${err.context.value}`);
+    // You can access specific context properties for detailed error reporting
   }
 
-  return [result, err] as const;
+  return [validatedInput, err];
 }
 
-// Using with goFetch
-interface ApiError {
-  code: string;
-  message: string;
-  context?: unknown;
-}
-
-async function fetchUserData(userId: string) {
-  let [user, err] = await goFetch<User, ApiError>(`/api/users/${userId}`, {
-    errorTransformer: (error) => {
-      if (error instanceof Response) {
-        return {
-          code: `HTTP_${error.status}`,
-          message: error.statusText,
-          context: { status: error.status }
-        };
-      }
-      if (error instanceof ValidationError) {
-        return {
-          code: 'VALIDATION_ERROR',
-          message: error.message,
-          context: error.context
-        };
-      }
-      return {
-        code: 'UNKNOWN_ERROR',
-        message: String(error)
-      };
-    }
-  });
-
-  if (err) {
-    console.error(`API Error: ${err.code}`, err.context);
-    return [null, err] as const;
-  }
-
-  return [user, null] as const;
+// Usage
+let [validInput, validationError] = validateInput('test');
+if (validationError) {
+  console.error('Input validation failed:', validationError.message);
+  console.log('Context:', validationError.context); // Access detailed context
+} else {
+  console.log('Valid input:', validInput);
 }
 ```
 
-## Best Practices
+In this example, `ValidationError` includes a `context` property of type `ValidationContext`, which provides details about the validation failure, such as the field, the invalid value, and the constraint that was violated.
 
-1. Always use `let` for result declarations:
-```typescript
-// ✅ Good: Using let
-let [value, err] = goSync(() => validate(input));
-if (err) return [null, err] as const;
+## Best Practices for Custom Error Types
 
-// ❌ Bad: Using const
-const [data, error] = goSync(() => validate(input));
-```
+- **Be Specific:** Create error types that are specific to your application's domain and error scenarios.
+- **Add Context:** Include context-rich properties in your error types to provide detailed error information.
+- **Use Hierarchies:** Organize your error types into hierarchies for better categorization and handling of errors.
+- **Type Your Results:**  Always use the custom error types in your `Result<T, E>` type definitions to enforce type safety.
+- **Consistent Transformation:** When using `goFetch`, leverage `errorTransformer` to consistently transform API errors into your custom error types.
 
-2. Add meaningful context to errors:
-```typescript
-// ✅ Good: Rich error context
-class ValidationError extends Error {
-  constructor(
-    message: string,
-    public field: string,
-    public value: unknown
-  ) {
-    super(message);
-  }
-}
+## Next Steps
 
-// ❌ Bad: Just message
-throw new Error('Validation failed');
-```
-
-3. Use error hierarchies for better error handling:
-```typescript
-// ✅ Good: Error hierarchy
-class AppError extends Error {
-  constructor(message: string, public code: string) {
-    super(message);
-  }
-}
-
-class ValidationError extends AppError {
-  constructor(message: string) {
-    super(message, 'VALIDATION_ERROR');
-  }
-}
-
-// ❌ Bad: Flat error types
-class ValidationError extends Error {}
-class NetworkError extends Error {}
-```
-
-4. Transform errors consistently:
-```typescript
-// ✅ Good: Consistent error transformation
-let [data, err] = await goFetch<User, ApiError>('/api/user', {
-  errorTransformer: (error) => ({
-    code: error instanceof Response ? `HTTP_${error.status}` : 'UNKNOWN',
-    message: error instanceof Error ? error.message : String(error)
-  })
-});
-
-// ❌ Bad: Inconsistent error handling
-let [data, err] = await goFetch('/api/user');
-if (err instanceof Response) {
-  // Handle response error
-} else if (err instanceof Error) {
-  // Handle error
-}
-```
-
-## See Also
-
-- [Error Handling](/docs/api-reference/error-handling)
-- [goFetch Function](/docs/api-reference/go-fetch)
-- [Basic Usage](/docs/examples/basic-usage)
+- **[Error Handling Guide](/docs/guides/error-handling):** Explore comprehensive guides on different error handling patterns and strategies.
+- **[API Reference for Types](/docs/api-reference/types):**  Review the API documentation for the `Result` type and other related types.
+- **[Examples on Error Propagation](/docs/examples/error-propagation):**  Learn how to effectively propagate and handle errors in complex workflows.

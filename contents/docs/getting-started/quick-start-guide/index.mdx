@@ -1,218 +1,109 @@
 ---
 title: Quick Start Guide
-description: Learn the basics of go-errors in 5 minutes
+description: Get up and running with go-errors in minutes with this quick start guide.
 ---
 
 # Quick Start Guide
 
-This guide will help you get started with go-errors quickly. We'll cover the basic patterns and show you how to handle both synchronous and asynchronous errors effectively.
+This guide provides a rapid introduction to **go-errors**, demonstrating its core functionalities and basic usage patterns in just a few minutes. By the end of this guide, you'll be able to start using `go-errors` for both synchronous and asynchronous error handling in your projects.
+
+## Prerequisites
+
+Before you begin, ensure that you have `go-errors` installed in your project. If you haven't installed it yet, please follow the [Installation Guide](/docs/getting-started/installation).
 
 ## Basic Usage
 
-First, import the necessary functions from go-errors:
+Let's dive into the basic usage of `go-errors` with practical examples.
+
+### Synchronous Operations with `goSync`
+
+For synchronous operations that might throw errors, use the `goSync` function. Here’s a simple example of a division function that throws an error when dividing by zero:
 
 ```typescript
-import { goSync, goFetch } from 'go-errors';
-```
+import { goSync } from 'go-errors';
 
-### Synchronous Error Handling
-
-Here's a simple example of handling synchronous errors:
-
-```typescript
 function divide(a: number, b: number): number {
-  if (b === 0) throw new Error("Division by zero");
+  if (b === 0) {
+    throw new Error("Cannot divide by zero!");
+  }
   return a / b;
 }
 
-// Using go-errors
-let [result, err] = goSync(() => divide(10, 0));
+// Using goSync to handle potential errors
+let [result, err] = goSync(() => divide(10, 2)); // Example of a successful operation
 
 if (err) {
-  console.log("Failed to divide:", err.message);
-  // Handle the error case
+  // Error handling block
+  console.error("Operation failed:", err.message);
 } else {
-  console.log("Result:", result);
-  // Use the result
+  // Success block
+  console.log("Result of division:", result); // Output: Result of division: 5
+}
+
+// Example of an operation that will throw an error
+let [errorResult, divisionError] = goSync(() => divide(5, 0));
+
+if (divisionError) {
+  console.error("Division error caught:", divisionError.message); // Output: Division error caught: Cannot divide by zero!
+} else {
+  console.log("Division result:", errorResult);
 }
 ```
 
-### Asynchronous Error Handling
+In this example, `goSync` wraps the `divide` function. If `divide` executes successfully, the result is returned in the `result` variable, and `err` is `null`. If an error is thrown, `result` is `null`, and `err` contains the error object.
 
-go-errors provides a powerful `goFetch` function for handling HTTP requests:
+### Asynchronous Operations with `go`
+
+For asynchronous operations, such as Promises, use the `go` function.  Let's consider an example using `fetch` to get user data from an API:
 
 ```typescript
+import { go } from 'go-errors';
+
 interface User {
   id: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
+  name: string;
+  email: string;
 }
 
-async function fetchUserData(id: string) {
-  let [user, err] = await goFetch<User>(`/api/users/${id}`, {
-    responseTransformer: (data) => ({
-      ...data,
-      fullName: `${data.firstName} ${data.lastName}`
-    })
-  });
-  
-  if (err) {
-    console.error("Failed to fetch user:", err);
-    return [null, err] as const;
+async function fetchUser(userId: string): Promise<User> {
+  const response = await fetch(`/api/users/${userId}`);
+  if (!response.ok) {
+    throw new Error(\`HTTP error! status: ${response.status}\`);
   }
-  
-  return [user, null] as const;
+  return response.json() as Promise<User>;
 }
 
-// Usage
 async function main() {
-  let [userData, err] = await fetchUserData("123");
-  if (err) {
-    console.error("Failed to fetch user:", err.message);
-    return;
+  // Example of fetching user data successfully
+  let [userData, userError] = await go(fetchUser('123'));
+
+  if (userError) {
+    console.error("Failed to fetch user data:", userError.message);
+  } else {
+    console.log("User data fetched:", userData);
   }
-  console.log("User data:", userData);
-}
-```
 
-## Working with Custom Error Types
+  // Example of handling a fetch error
+  let [errorData, fetchError] = await go(fetchUser('invalid-user-id')); // Assuming this ID will cause an error
 
-You can use custom error types for more specific error handling:
-
-```typescript
-class ValidationError extends Error {
-  constructor(
-    message: string,
-    public field: string,
-    public value: unknown
-  ) {
-    super(message);
-    this.name = 'ValidationError';
+  if (fetchError) {
+    console.error("Fetch operation error:", fetchError.message); // Output: Fetch operation error: HTTP error! status: 404 (or similar)
+  } else {
+    console.log("Fetch result:", errorData);
   }
 }
 
-function validateUser(user: unknown) {
-  let [result, err] = goSync<unknown, ValidationError>(() => {
-  if (typeof user !== 'object' || !user) {
-      throw new ValidationError(
-        'Invalid user object',
-        'user',
-        user
-      );
-  }
-  return user;
-  });
-
-  if (err) {
-    console.error(
-      `Validation failed: ${err.message}`,
-      `Field: ${err.field}`,
-      `Value: ${err.value}`
-    );
-    return [null, err] as const;
-  }
-
-  return [result, null] as const;
-}
-
-// Usage
-let [user, err] = validateUser({ name: 'John' });
-if (err) {
-  console.error('Validation failed:', err.message);
-  return;
-}
-console.log('Valid user:', user);
+main();
 ```
 
-## Error Propagation
-
-go-errors makes it easy to propagate errors up the call stack:
-
-```typescript
-function processStep1() {
-  let [result, err] = goSync(() => {
-    // ... some operation that might throw
-    return "step1 result";
-  });
-  if (err) return [null, err] as const;
-  return [result, null] as const;
-}
-
-function processStep2(input: string) {
-  let [result, err] = goSync(() => {
-    // ... process the input
-    return "step2 result";
-  });
-  if (err) return [null, err] as const;
-  return [result, null] as const;
-}
-
-async function process() {
-  let [step1Result, err] = processStep1();
-  if (err) {
-    return [null, err] as const;
-  }
-
-  let [step2Result, err] = processStep2(step1Result);
-  if (err) {
-    return [null, err] as const;
-  }
-
-  return [step2Result, null] as const;
-}
-```
-
-## Best Practices
-
-1. Always use `let` for result declarations:
-```typescript
-// ✅ Good: Using let
-let [value, err] = goSync(() => validate(input));
-if (err) return [null, err] as const;
-
-// ❌ Bad: Using const
-const [data, error] = goSync(() => validate(input));
-```
-
-2. Always check errors before using values:
-```typescript
-// ✅ Good: Check errors first
-let [data, err] = await goFetch('/api/data');
-if (err) {
-  console.error('Failed:', err);
-  return;
-}
-console.log('Data:', data);
-
-// ❌ Bad: Using data without checking
-let [data, err] = await goFetch('/api/data');
-console.log('Data:', data); // data might be null!
-```
-
-3. Use type parameters for better type safety:
-```typescript
-// ✅ Good: Explicit types
-let [user, err] = await goFetch<User, ApiError>('/api/user/123');
-
-// ❌ Bad: Implicit any
-let [data, err] = await goFetch('/api/user/123');
-```
-
-4. Use `as const` for return values:
-```typescript
-// ✅ Good: Using as const
-return [value, null] as const;
-return [null, err] as const;
-
-// ❌ Bad: Without as const
-return [value, null];
-```
+The `go` function handles Promises and resolves to a Result tuple when the Promise settles. This allows you to use the same error-checking pattern for both synchronous and asynchronous code.
 
 ## Next Steps
 
-Now that you understand the basics, you can:
-- Learn about [Core Concepts](/docs/getting-started/core-concepts)
-- Explore the [API Reference](/docs/api-reference)
-- Check out more [Examples](/docs/examples)
-- Read about [Best Practices](/docs/guides/best-practices)
+Congratulations! You've completed the Quick Start Guide and now understand the basics of using `go-errors`.  To deepen your knowledge and explore more features, we recommend the following:
+
+- **[Core Concepts](/docs/getting-started/core-concepts):**  Explore the fundamental concepts behind `go-errors`, such as Result types and error normalization.
+- **[API Reference](/docs/api-reference):**  Dive into the detailed API documentation for all functions and types provided by `go-errors`.
+- **[Guides & Best Practices](/docs/guides):**  Learn about advanced usage patterns, best practices, and error handling strategies.
+
+Start using `go-errors` in your projects today and experience a more elegant and type-safe approach to error handling in TypeScript and JavaScript!
