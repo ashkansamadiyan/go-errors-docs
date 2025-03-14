@@ -1,53 +1,84 @@
 ---
 title: Installation
-description: Get started with go-errors in your project
+description: Learn how to install go-errors in your TypeScript or JavaScript project.
 ---
 
 # Installation
 
-Getting started with go-errors is straightforward. You can install it using bun:
+To start using **go-errors**, you need to install it in your project.  The recommended package manager is bun, but npm and yarn are also supported.
+
+## Using bun (Recommended)
+
+If you are using bun, the installation is simple:
 
 ```bash
 bun add go-errors
 ```
 
-## TypeScript Configuration
+Bun is known for its speed and efficiency, making it a great choice for modern JavaScript and TypeScript projects.
 
-go-errors is written in TypeScript and includes type definitions out of the box. No additional configuration is required for TypeScript projects.
+## Using npm
 
-For optimal usage, ensure your `tsconfig.json` includes:
+For npm users, run:
+
+```bash
+npm install go-errors
+```
+
+npm is the most widely used package manager in the JavaScript ecosystem and is fully supported by `go-errors`.
+
+## Using yarn
+
+If you prefer yarn, use:
+
+```bash
+yarn add go-errors
+```
+
+Yarn is another popular package manager that provides fast and reliable package installations.
+
+## TypeScript Configuration (Optional)
+
+**go-errors** is written in TypeScript and includes type definitions out of the box.  This means you get immediate type safety and autocompletion in your TypeScript projects without any extra configuration.
+
+However, for the best experience, ensure your `tsconfig.json` file includes the following compiler options:
 
 ```json
 {
   "compilerOptions": {
-    "strict": true,
-    "esModuleInterop": true
+    "strict": true,       // Enable all strict type-checking options.
+    "esModuleInterop": true // Emit __importStar and allow importing CJS modules as default imports.
   }
 }
 ```
 
-## Verifying Installation
+These options enforce stricter type checking and improve compatibility with ES modules, which are recommended for modern TypeScript development.
 
-You can verify your installation by creating a simple test file:
+## Verifying the Installation
+
+After installation, you can quickly verify that `go-errors` is correctly set up by running a simple test in your project. Create a file, for example, `test-go-errors.ts` or `test-go-errors.js`, and add the following code:
 
 ```typescript
 import { goSync } from 'go-errors';
 
-// Try a simple synchronous operation
+// Test a simple synchronous operation
 let [value, err] = goSync(() => {
-  return "Installation successful!";
+  return "go-errors is installed correctly!";
 });
 
 if (err) {
-  console.error("Something went wrong:", err.message);
+  console.error("Installation verification failed:", err.message);
 } else {
-  console.log(value); // Should print "Installation successful!"
+  console.log(value); // Should print "go-errors is installed correctly!"
 }
 ```
 
+Run this file using `bun run test-go-errors.ts`, `npm run test-go-errors.js`, or `yarn run test-go-errors.js`, depending on your package manager and file type. If you see the message `"go-errors is installed correctly!"` in your console, you're all set!
+
 ## Next Steps
 
-Now that you have go-errors installed, check out:
-- [Quick Start Guide](/docs/getting-started/quick-start-guide) to learn the basics
-- [Core Concepts](/docs/getting-started/core-concepts) to understand the fundamentals
-- [API Reference](/docs/api-reference) for detailed documentation
+With `go-errors` successfully installed, you're ready to start simplifying your error handling!  Explore these next steps:
+
+- **[Quick Start Guide](/docs/getting-started/quick-start-guide):**  Dive into practical examples and learn the basic usage patterns.
+- **[Core Concepts](/docs/getting-started/core-concepts):**  Deepen your understanding of the library's fundamentals.
+- **[API Reference](/docs/api-reference):**  Get detailed information about all functions and types.

@@ -1,167 +1,196 @@
 ---
-title: Basic Usage
-description: Basic examples of using go-errors
+title: Basic Usage Examples
+description: Explore basic usage examples of go-errors for synchronous, asynchronous, and API operations.
 ---
 
-# Basic Usage
+# Basic Usage Examples
 
-This page provides basic examples of using go-errors in common scenarios.
+This section provides fundamental examples to illustrate the basic usage of **go-errors** in various scenarios. These examples cover synchronous operations, asynchronous operations, handling multiple operations, and API integrations.
 
-## Simple Error Handling
+## 1. Simple Synchronous Error Handling with `goSync`
+
+The `goSync` function is ideal for wrapping synchronous operations that might throw errors. Here’s an example of a `safeDivide` function that uses `goSync` to handle potential division by zero errors:
 
 ```typescript
 import { goSync } from 'go-errors';
 
-function divide(a: number, b: number) {
+function safeDivide(a: number, b: number): [number | null, Error | null] {
   let [result, err] = goSync(() => {
-    if (b === 0) throw new Error('Division by zero');
+    if (b === 0) {
+      throw new Error('Cannot divide by zero!');
+    }
     return a / b;
   });
 
   if (err) {
-    console.error('Division failed:', err.message);
-    return [null, err] as const;
+    console.error('Division operation failed:', err.message);
+    return [null, err]; // Return null value and the error
   }
 
-  return [result, null] as const;
+  return [result, null]; // Return the result and null error
 }
 
-// Usage
-let [result, err] = divide(10, 2);
-if (err) {
-  console.error('Error:', err.message);
+// Usage examples
+let [successResult, successError] = safeDivide(10, 2);
+if (successError) {
+  console.error('Error:', successError.message);
 } else {
-  console.log('Result:', result);  // Output: 5
+  console.log('Successful division result:', successResult); // Output: Successful division result: 5
+}
+
+let [failResult, failError] = safeDivide(5, 0);
+if (failError) {
+  console.error('Error:', failError.message); // Output: Error: Cannot divide by zero!
+} else {
+  console.log('Division result:', failResult);
 }
 ```
 
-## Async Operations
+In this example, `goSync` elegantly handles the potential error within the `divide` operation, returning a `Result` tuple that clearly indicates either success or failure.
+
+## 2. Handling Asynchronous Operations with `go`
+
+For asynchronous operations, such as fetching data from an API, the `go` function is used.  The following example demonstrates fetching user data using `go` and `goFetch`:
 
 ```typescript
 import { goFetch } from 'go-errors';
 
-async function fetchUserData(userId: string) {
+interface User {
+  id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+}
+
+async function fetchUserData(userId: string): Promise<[User | null, string | null]> {
   let [user, err] = await goFetch<User>(`/api/users/${userId}`, {
-    responseTransformer: (data) => ({
+    responseTransformer: (data: any) => ({
       ...data,
-      fullName: `${data.firstName} ${data.lastName}`
+      fullName: `${data.firstName} ${data.lastName}` // Enhance user data
     })
   });
-  
+
   if (err) {
-    console.error('Failed to fetch user:', err.message);
-    return [null, err] as const;
+    console.error('Failed to fetch user data:', err);
+    return [null, err]; // Return null user and the error
   }
 
-  return [user, null] as const;
+  return [user, null]; // Return user data and null error
 }
 
-// Usage
-let [userData, err] = await fetchUserData('123');
-if (err) {
-  console.error('Error:', err.message);
-} else {
-  console.log('User data:', userData);
+async function main() {
+  let [userData, fetchError] = await fetchUserData('123');
+  if (fetchError) {
+    console.error('Fetch error:', fetchError.message);
+  } else {
+    console.log('Fetched user data:', userData); // Output: User data: { id: '123', firstName: '...', lastName: '...', fullName: '...' }
+  }
 }
+
+main();
 ```
 
-## Multiple Operations
+This example showcases how `goFetch` simplifies asynchronous API calls and error handling, providing a clean and type-safe way to manage API responses.
+
+## 3. Composing Multiple Operations
+
+**go-errors** makes it straightforward to compose multiple operations, handling errors at each step.  Consider a scenario where you need to fetch user data, validate it, and then save it to a database:
 
 ```typescript
 import { goSync, go, goFetch } from 'go-errors';
 
-async function processUserData(userId: string) {
+interface User { /* ... */ } // Assume User interface is defined
+
+async function processUserData(userId: string): Promise<[User | null, Error | null]> {
   // Fetch user data
-  let [user, err] = await goFetch<User>(`/api/users/${userId}`, {
-    responseTransformer: (data) => ({
-      ...data,
-      fullName: `${data.firstName} ${data.lastName}`
-    })
-  });
-  
-  if (err) {
-    console.error('Failed to fetch user:', err.message);
-    return [null, err] as const;
+  let [user, fetchErr] = await goFetch<User>(`/api/users/${userId}`);
+  if (fetchErr) {
+    console.error('Fetch user failed:', fetchErr.message);
+    return [null, fetchErr];
   }
 
-  // Validate user data
-  let [validatedData, err] = goSync(() => validateUser(user));
-  if (err) {
-    console.error('Validation failed:', err.message);
-    return [null, err] as const;
+  // Validate user data synchronously
+  let [validatedUser, validationErr] = goSync(() => validateUser(user)); // Assume validateUser function exists
+  if (validationErr) {
+    console.error('User validation failed:', validationErr.message);
+    return [null, validationErr];
   }
 
-  // Save to database
-  let [savedUser, err] = await go(saveToDatabase(validatedData));
-  if (err) {
-    console.error('Failed to save user:', err.message);
-    return [null, err] as const;
+  // Save validated user data asynchronously
+  let [savedUser, saveErr] = await go(saveUserToDatabase(validatedUser)); // Assume saveUserToDatabase function exists
+  if (saveErr) {
+    console.error('Save user failed:', saveErr.message);
+    return [null, saveErr];
   }
 
-  return [savedUser, null] as const;
+  return [savedUser, null]; // Return saved user and null error
 }
 
-// Usage
-let [result, err] = await processUserData('123');
-if (err) {
-  console.error('Error:', err.message);
-} else {
-  console.log('Processed user:', result);
+async function main() {
+  let [processedUser, processError] = await processUserData('123');
+  if (processError) {
+    console.error('User processing error:', processError.message);
+  } else {
+    console.log('Processed user data:', processedUser); // Output: Processed user data: { ... }
+  }
 }
+
+main();
 ```
 
-## API Integration
+This example demonstrates how to chain `goFetch`, `goSync`, and `go` to handle a sequence of operations, with error checking at each step, leading to robust and readable code.
+
+## 4. Integrating with APIs using `goFetch`
+
+`goFetch` is particularly useful for integrating with REST APIs, providing options for response and error transformation. Here’s an example of fetching user data from an API and transforming the response:
 
 ```typescript
 import { goFetch } from 'go-errors';
 
 interface ApiResponse<T> {
   data: T;
-  metadata: {
-    timestamp: string;
-    version: string;
-  };
+  metadata: { version: string };
 }
 
-interface User {
-  id: number;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  email: string;
-}
+interface User { /* ... */ } // Assume User interface is defined
 
-async function fetchUser(id: string) {
-  let [response, err] = await goFetch<ApiResponse<User>>(`/api/users/${id}`, {
-    responseTransformer: (data) => ({
-      ...data,
-      data: {
-        ...data.data,
-        fullName: `${data.data.firstName} ${data.data.lastName}`
-      }
-    }),
-    errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
+async function fetchUserFromApi(userId: string): Promise<[User | null, string | null]> {
+  let [apiResponse, apiError] = await goFetch<ApiResponse<User>>(`/api/users/${userId}`, {
+    responseTransformer: (data: any) => {
+      return {
+        ...data.data, // Extract user data from ApiResponse
+        fullName: `${data.data.firstName} ${data.data.lastName}` // Enhance user data
+      } as User;
+    },
+    errorTransformer: (error: any) => `API request failed: ${error.message || error}` // Custom error transformation
   });
 
-  if (err) {
-    console.error('API Error:', err.message);
-    return [null, err] as const;
+  if (apiError) {
+    console.error('API request error:', apiError);
+    return [null, apiError];
   }
 
-  return [response.data, null] as const;
+  return [apiResponse, null];
 }
 
-// Usage
-let [user, err] = await fetchUser('123');
-if (err) {
-  console.error('Error:', err.message);
-} else {
-  console.log('User:', user.fullName);
+async function main() {
+  let [userApiResponse, apiError] = await fetchUserFromApi('123');
+  if (apiError) {
+    console.error('API Error:', apiError);
+  } else {
+    console.log('API User Response:', userApiResponse); // Output: API User Response: { data: { ... }, metadata: { ... } }
+  }
 }
+
+main();
 ```
 
-## See Also
+This example illustrates the use of `responseTransformer` and `errorTransformer` in `goFetch` to customize data and error handling for API interactions, making your API integration code cleaner and more maintainable.
 
-- [Error Propagation](/docs/examples/error-propagation)
-- [Custom Error Types](/docs/examples/custom-error-types)
-- [API Reference](/docs/api-reference/core-functions) 
+## Next Steps
+
+These basic examples provide a foundation for using **go-errors** in your projects. To explore more advanced features and usage patterns, continue with these sections:
+
+- **[Custom Error Types](/docs/examples/custom-error-types):** Learn how to define and use custom error types for more specific error handling.
+- **[Error Propagation](/docs/examples/error-propagation):**  Understand different strategies for propagating errors in complex applications.
+- **[API Reference](/docs/api-reference/core-functions):**  Dive deeper into the API documentation for detailed information on all functions and options.

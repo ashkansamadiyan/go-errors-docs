@@ -1,210 +1,157 @@
 ---
 title: Core Concepts
-description: Understanding the fundamental concepts of go-errors
+description: Dive into the core concepts of go-errors: Result type, goSync, go, and goFetch.
 ---
 
-# Core Concepts
+# Core Concepts of go-errors
 
-go-errors is built around several core concepts that make error handling in TypeScript more predictable and type-safe. Let's explore these concepts in detail.
+To effectively use **go-errors**, it's essential to understand its core concepts. This section will guide you through the fundamental building blocks of the library: the `Result` type and the core functions: `goSync`, `go`, and `goFetch`.
 
-## The Result Type
+## 1. The Result Type: Encapsulating Success or Failure
 
-The foundation of go-errors is the `Result` type:
+The cornerstone of **go-errors** is the `Result` type. It's designed to represent the outcome of an operation that can either succeed with a value or fail with an error, all within a single, type-safe construct.
 
 ```typescript
 type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
 ```
 
-This type represents either a successful result with a value of type `T`, or an error of type `E`. The key characteristics are:
+**Key Features of the `Result` Type:**
 
-- It's a readonly tuple type with exactly two elements
-- One element is always `null`
-- The other element is either the value or the error
-- The error type defaults to `Error` but can be customized
+- **Tuple-Based:**  It's a TypeScript tuple, specifically an array with two elements.
+- **Two Possible States:**  A `Result` can be in one of two states:
+    - **Success:** Represented as `[value: T, error: null]`. The first element holds the successful value of type `T`, and the second element is always `null`.
+    - **Failure:** Represented as `[value: null, error: E]`. The first element is `null`, and the second element holds the error of type `E`.
+- **Readonly:**  The tuple is `readonly`, ensuring immutability and preventing accidental modifications.
+- **Type Safety:**  Using generics, `Result<T, E>` enforces type safety for both the success value (`T`) and the error type (`E`). The error type defaults to `Error` but can be customized.
 
-## Core Functions
+**Benefits of Using `Result`:**
 
-go-errors provides three main functions:
+- **Explicit Error Handling:**  The `Result` type forces you to explicitly handle both success and error scenarios.
+- **Improved Code Clarity:**  It makes the potential for errors explicit in function signatures and return types.
+- **Type Safety:**  TypeScript's type system ensures that you are working with the correct types in both success and error cases.
 
-```typescript
-// For synchronous operations
-function goSync<T, E = Error>(fn: () => T): Result<T, E>;
+## 2. Core Functions: `goSync`, `go`, and `goFetch`
 
-// For asynchronous operations
-function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+**go-errors** provides three core functions that wrap operations and return `Result` tuples, making error handling consistent and straightforward across different types of operations.
 
-// For HTTP requests
-function goFetch<T, E = Error>(
-  url: string,
-  options?: GoFetchOptions<T, E>
-): Promise<Result<T, E>>;
-```
+### `goSync<T, E = Error>(fn: () => T): Result<T, E>`
 
-Key points about these functions:
+- **Purpose:**  Wraps synchronous functions that might throw errors.
+- **Input:**  A synchronous function `fn` that returns a value of type `T` or throws an error.
+- **Output:**  A `Result<T, E>` tuple.
+- **Usage:**  Use `goSync` to handle synchronous operations where you want to avoid try-catch blocks and use the `Result` type for error management.
 
-1. `goSync` handles synchronous operations
-2. `go` handles asynchronous operations
-3. `goFetch` provides enhanced fetch capabilities with transformers
-4. All functions return a `Result` type (or Promise of Result for async operations)
-5. All preserve type information for both success and error cases
-
-## Variable Declaration Style
-
-Following Go's convention, we use `let` for result declarations:
+**Example:**
 
 ```typescript
-// ✅ Good: Using let
-let [value, err] = goSync(() => someOperation());
-if (err) return handleError(err);
+import { goSync } from 'go-errors';
 
-let [result, err] = goSync(() => anotherOperation());
-if (err) return handleError(err);
-
-// ❌ Bad: Using const
-const [data, error] = goSync(() => operation()); // Less idiomatic
-```
-
-## Error Handling Pattern
-
-The go-errors pattern follows these principles:
-
-1. **Explicit Error Checking**: Errors must be explicitly checked before accessing values
-2. **Type Safety**: TypeScript ensures you handle both success and error cases
-3. **No Exception Throwing**: Errors are returned as values, not thrown
-4. **Composition**: Error handling can be composed through function chains
-
-Example of the pattern:
-
-```typescript
-// Basic pattern
-let [value, err] = goSync(() => someOperation());
-if (err) {
-  // Handle error case
-  return [null, err] as const;
+function parseJson(jsonString: string): any {
+  return JSON.parse(jsonString); // Might throw SyntaxError
 }
-// Use value safely here
 
-// Composition pattern
-function processData() {
-  let [data, err] = goSync(() => fetchData());
-  if (err) return [null, err] as const;
+let [data, err] = goSync(() => parseJson('{"key": "value"}'));
 
-  let [processed, err] = goSync(() => processStep(data));
-  if (err) return [null, err] as const;
-
-  return [processed, null] as const;
-}
-```
-
-## Type Safety
-
-go-errors leverages TypeScript's type system to ensure type safety:
-
-```typescript
-// Generic type parameters
-let [value, err] = goSync<string, ValidationError>(() => {
-  // TypeScript knows:
-  // - value is string | null
-  // - err is ValidationError | null
-  // - exactly one of them is null
-  return "hello";
-});
-
-// Type narrowing
 if (err) {
-  // TypeScript knows:
-  // - value is null
-  // - err is ValidationError
+  console.error("JSON parsing failed:", err.message);
 } else {
-  // TypeScript knows:
-  // - value is string
-  // - err is null
+  console.log("Parsed JSON data:", data);
 }
 ```
 
-## Async Operations
+### `go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>`
 
-Async operations work similarly to sync ones, but return a Promise of Result:
+- **Purpose:**  Wraps asynchronous operations (Promises) that might reject.
+- **Input:**  A `Promise<T>` that resolves to a value of type `T` or rejects with an error.
+- **Output:**  A `Promise<Result<T, E>>` that resolves to a `Result<T, E>` tuple.
+- **Usage:**  Use `go` to handle asynchronous operations, such as API calls or any Promise-based operation, in a Go-style error handling manner.
+
+**Example:**
 
 ```typescript
-// Async pattern
-let [data, err] = await go(fetchData());
+import { go } from 'go-errors';
+
+async function fetchData(): Promise<string> {
+  const response = await fetch('/api/data');
+  if (!response.ok) {
+    throw new Error(\`HTTP error! status: ${response.status}\`);
+  }
+  return response.text();
+}
+
+async function main() {
+  let [textData, fetchErr] = await go(fetchData());
+
+  if (fetchErr) {
+    console.error("Data fetching failed:", fetchErr.message);
+  } else {
+    console.log("Fetched data:", textData);
+  }
+}
+
+main();
+```
+
+### `goFetch<T, E = string>(url: string, options?: GoFetchOptions<T, E>): Promise<Result<T, E>>`
+
+- **Purpose:**  An enhanced `fetch` wrapper that simplifies making HTTP requests and handling responses and errors in a type-safe way.
+- **Input:**
+    - `url`: The URL to fetch.
+    - `options` (optional):  `GoFetchOptions<T, E>` to configure request, response transformation, and error transformation.
+- **Output:**  A `Promise<Result<T, E>>` that resolves to a `Result<T, E>` tuple, where `T` is the transformed response type, and `E` is the transformed error type (defaulting to `string`).
+- **Usage:**  Use `goFetch` for making API requests, taking advantage of its built-in response and error transformation capabilities.
+
+**Example:**
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface ApiResponse {
+  data: { message: string };
+}
+
+async function getMessage() {
+  let [apiResponse, apiError] = await goFetch<ApiResponse>('/api/message', {
+    responseTransformer: (data: any) => data as ApiResponse // Transform response data
+  });
+
+  if (apiError) {
+    console.error("API request failed:", apiError);
+  } else {
+    console.log("API message:", apiResponse?.data.message);
+  }
+}
+
+getMessage();
+```
+
+## Variable Declaration with `let`
+
+In **go-errors** examples and best practices, you'll often see `let` used for declaring `Result` tuples instead of `const`. This is a stylistic convention, inspired by Go, to allow reusing the error variable name (typically `err`) in sequential operations.
+
+```typescript
+// Recommended: Using let for Result tuples
+let [value1, err] = goSync(() => operation1());
 if (err) {
-  // Handle error
-  return [null, err] as const;
+  handleError(err);
+} else {
+  processValue1(value1);
 }
-// Use data safely
 
-// Using goFetch
-let [user, err] = await goFetch<User>('/api/user/123', {
-  responseTransformer: (data) => ({
-    ...data,
-    fullName: `${data.firstName} ${data.lastName}`
-  })
-});
-
+let [value2, err] = goSync(() => operation2()); // Reusing 'err'
 if (err) {
-  // Handle error
-  return [null, err] as const;
-}
-// Use user safely
-```
-
-## Error Propagation
-
-Error propagation in go-errors is explicit and type-safe:
-
-```typescript
-type Result<T, E> = readonly [T, null] | readonly [null, E];
-
-function step1(): Result<string, Error> {
-  let [value, err] = goSync(() => "step1");
-  if (err) return [null, err] as const;
-  return [value, null] as const;
-}
-
-function step2(input: string): Result<number, Error> {
-  let [value, err] = goSync(() => input.length);
-  if (err) return [null, err] as const;
-  return [value, null] as const;
-}
-
-function process(): Result<number, Error> {
-  let [step1Result, err] = step1();
-  if (err) return [null, err] as const;
-
-  let [step2Result, err] = step2(step1Result);
-  if (err) return [null, err] as const;
-
-  return [step2Result, null] as const;
+  handleError(err);
+} else {
+  processValue2(value2);
 }
 ```
 
-## Response Transformation
-
-The `goFetch` function provides powerful response transformation capabilities:
-
-```typescript
-interface User {
-  id: number;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-}
-
-let [user, err] = await goFetch<User>('/api/user/1', {
-  responseTransformer: (data) => ({
-    ...data,
-    fullName: `${data.firstName} ${data.lastName}`
-  }),
-  errorTransformer: (e) => new ApiError(e instanceof Error ? e.message : 'Unknown')
-});
-```
+While `const` can also be used, `let` aligns more closely with the idiomatic Go error handling style and can improve readability in code with sequential error checks.
 
 ## Next Steps
 
-Now that you understand the core concepts, you can:
-- Explore the [API Reference](/docs/api-reference) for detailed documentation
-- Check out [Examples](/docs/examples) for real-world usage
-- Learn about [Best Practices](/docs/guides/best-practices)
-- See [Advanced Patterns](/docs/guides/advanced-patterns) for more complex scenarios 
+With a solid understanding of these core concepts, you are now ready to explore how to use **go-errors** in practice. Continue with these sections to deepen your knowledge:
+
+- **[Basic Usage Examples](/docs/getting-started/basic-usage):**  See more practical examples of using `goSync`, `go`, and `goFetch`.
+- **[API Reference](/docs/api-reference):**  Explore the detailed API documentation for all functions and types.
+- **[Guides & Best Practices](/docs/guides):**  Learn about advanced usage patterns and best practices for effective error handling with `go-errors`.
