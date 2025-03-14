@@ -8,6 +8,9 @@ export type EachRoute = {
   tag?: string;
 };
 
+// Base path for documentation pages
+const DOCS_BASE_PATH = "/docs";
+
 export const ROUTES: EachRoute[] = [
   {
     title: "Getting Started",
@@ -83,16 +86,23 @@ export const ROUTES: EachRoute[] = [
 
 type Page = { title: string; href: string };
 
-function getRecurrsiveAllLinks(node: EachRoute) {
+function getRecurrsiveAllLinks(node: EachRoute, parentPath: string = ""): Page[] {
   const ans: Page[] = [];
+  // Build the current path correctly
+  const currentPath = parentPath + node.href;
+  
   if (!node.noLink) {
-    ans.push({ title: node.title, href: node.href });
+    ans.push({ title: node.title, href: currentPath });
   }
+  
   node.items?.forEach((subNode) => {
-    const temp = { ...subNode, href: `${node.href}${subNode.href}` };
-    ans.push(...getRecurrsiveAllLinks(temp));
+    // Pass the current path as the parent path for child nodes
+    ans.push(...getRecurrsiveAllLinks(subNode, currentPath));
   });
+  
   return ans;
 }
 
-export const page_routes = ROUTES.map((it) => getRecurrsiveAllLinks(it)).flat();
+export const page_routes = ROUTES.map((route) => 
+  getRecurrsiveAllLinks(route, DOCS_BASE_PATH)
+).flat();
