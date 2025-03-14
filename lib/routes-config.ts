@@ -8,6 +8,9 @@ export type EachRoute = {
   tag?: string;
 };
 
+// Base path for documentation pages
+const DOCS_BASE_PATH = "/docs";
+
 export const ROUTES: EachRoute[] = [
   {
     title: "Getting Started",
@@ -25,14 +28,14 @@ export const ROUTES: EachRoute[] = [
     items: [
       {
         title: "Introduction to Go-style Errors",
-        href: "/fundamentals/introduction-to-go-style-errors",
+        href: "/introduction-to-go-style-errors",
       },
-      { title: "The Result Type", href: "/fundamentals/the-result-type" },
-      { title: "Core Functions Overview", href: "/fundamentals/core-functions-overview" },
-      { title: "Error Handling in go-errors", href: "/fundamentals/error-handling-in-go-errors" },
+      { title: "The Result Type", href: "/the-result-type" },
+      { title: "Core Functions Overview", href: "/core-functions-overview" },
+      { title: "Error Handling in go-errors", href: "/error-handling-in-go-errors" },
       {
         title: "Working with Custom Error Types",
-        href: "/fundamentals/working-with-custom-error-types",
+        href: "/working-with-custom-error-types",
       },
     ],
   },
@@ -44,8 +47,8 @@ export const ROUTES: EachRoute[] = [
       { title: "goSync Function", href: "/go-sync-function" },
       { title: "go Function", href: "/go-function" },
       { title: "goFetch Function", href: "/go-fetch-function" },
-      { title: "unifiedGo Function", href: "/api-reference/unified-go-function" },
-      { title: "Type Definitions", href: "/api-reference/type-definitions" }
+      { title: "unifiedGo Function", href: "/unified-go-function" },
+      { title: "Type Definitions", href: "/type-definitions" }
     ],
   },
   {
@@ -53,29 +56,29 @@ export const ROUTES: EachRoute[] = [
     href: "/usage-guides",
     noLink: true,
     items: [
-      { title: "Basic Usage Patterns", href: "/usage-guides/basic-usage-patterns" },
+      { title: "Basic Usage Patterns", href: "/basic-usage-patterns" },
       {
         title: "Making HTTP Requests with goFetch",
-        href: "/usage-guides/making-http-requests-with-go-fetch",
+        href: "/making-http-requests-with-go-fetch",
       },
       {
         title: "Advanced Usage and Patterns",
-        href: "/usage-guides/advanced-usage-and-patterns",
+        href: "/advanced-usage-and-patterns",
         noLink: true,
         items: [
           {
             title: "Advanced Features",
-            href: "/usage-guides/advanced-usage-and-patterns/advanced-features",
+            href: "/advanced-features",
           },
           {
             title: "Advanced Patterns",
-            href: "/usage-guides/advanced-usage-and-patterns/advanced-patterns",
+            href: "/advanced-patterns",
           }
         ]
       },
       {
         title: "Asynchronous Programming with go-errors",
-        href: "/usage-guides/asynchronous-programming-with-go-errors",
+        href: "/asynchronous-programming-with-go-errors",
       },
     ],
   },
@@ -83,16 +86,23 @@ export const ROUTES: EachRoute[] = [
 
 type Page = { title: string; href: string };
 
-function getRecurrsiveAllLinks(node: EachRoute) {
+function getRecurrsiveAllLinks(node: EachRoute, parentPath: string = ""): Page[] {
   const ans: Page[] = [];
+  // Build the current path correctly
+  const currentPath = parentPath + node.href;
+  
   if (!node.noLink) {
-    ans.push({ title: node.title, href: node.href });
+    ans.push({ title: node.title, href: currentPath });
   }
+  
   node.items?.forEach((subNode) => {
-    const temp = { ...subNode, href: `${node.href}${subNode.href}` };
-    ans.push(...getRecurrsiveAllLinks(temp));
+    // Pass the current path as the parent path for child nodes
+    ans.push(...getRecurrsiveAllLinks(subNode, currentPath));
   });
+  
   return ans;
 }
 
-export const page_routes = ROUTES.map((it) => getRecurrsiveAllLinks(it)).flat();
+export const page_routes = ROUTES.map((route) => 
+  getRecurrsiveAllLinks(route, DOCS_BASE_PATH)
+).flat();
