@@ -1,0 +1,248 @@
+---
+title: Error Handling in go-errors
+description: Comprehensive guide to error handling with go-errors.
+---
+
+# Error Handling in `go-errors`
+
+This page provides a comprehensive guide to error handling in `go-errors`, covering error normalization, transformation, propagation, context preservation, and common patterns.
+
+## Error Normalization
+
+`go-errors` automatically normalizes thrown values into `Error` objects. This ensures consistency and provides useful properties like stack traces, even if the original thrown value was a primitive type (string, number, etc.) or a plain object.
+
+```typescript
+import { goSync } from 'go-errors';
+
+// Throwing a string:
+let [_, err1] = goSync(() => { throw "Something went wrong"; });
+console.log(err1 instanceof Error); // true
+console.log(err1.message); // "Something went wrong"
+
+// Throwing a plain object:
+let [_, err2] = goSync(() => { throw { code: "NOT_FOUND", message: "Resource not found" }; });
+console.log(err2 instanceof Error); // true
+console.log(err2.message); // "{ code: 'NOT_FOUND', message: 'Resource not found' }"  (Stringified object)
+console.log((err2 as any).code); // "NOT_FOUND" (Original properties are preserved on the Error object)
+
+// Throwing an Error object:
+let [_, err3] = goSync(() => { throw new Error("An error occurred"); });
+console.log(err3 instanceof Error); // true
+console.log(err3.message); // "An error occurred"
+```
+
+**Key takeaway:** Regardless of what is thrown, `goSync` and `go` will always return a `Result` tuple where the error part is an instance of `Error`.  Plain objects and primitives are wrapped in an `Error` object, while existing `Error` objects are passed through.
+
+## Error Transformation (with `goFetch`)
+
+The `goFetch` function provides a powerful `errorTransformer` option. This allows you to convert raw errors (like network errors or HTTP responses) into custom error types or standardized error formats.
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface ApiError {
+  code: string;
+  message: string;
+  status?: number;
+}
+
+let [data, err] = await goFetch<MyData, ApiError>('/api/data', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      // Handle HTTP errors
+      return {
+        code: `HTTP_${error.status}`,
+        message: error.statusText,
+        status: error.status,
+      };
+    }
+    if (error instanceof Error) {
+      // Handle other errors (e.g., network errors)
+      return {
+        code: 'NETWORK_ERROR',
+        message: error.message,
+      };
+    }
+    // Fallback for unknown errors
+    return {
+      code: 'UNKNOWN_ERROR',
+      message: String(error),
+    };
+  },
+});
+
+if (err) {
+  console.error("API Error:", err.code, err.message);
+  if (err.status) {
+    console.error("HTTP Status:", err.status);
+  }
+}
+```
+
+**Benefits of Error Transformation:**
+
+*   **Consistent Error Types:**  You can ensure that all errors returned by `goFetch` adhere to a specific interface (e.g., `ApiError`).
+*   **Centralized Error Handling:**  You can handle different error scenarios in a single place (the `errorTransformer`).
+*   **Improved Type Safety:**  TypeScript knows the shape of the error object, allowing for safer access to error properties.
+
+## Error Propagation
+
+`go-errors` encourages explicit error propagation.  Instead of relying on `try-catch` blocks that can obscure the flow of control, you explicitly check for errors and return them up the call stack.
+
+```typescript
+import { goSync, go } from 'go-errors';
+
+function validateInput(input: string) {
+  let [validated, err] = goSync(() => {
+    if (!input) {
+      throw new Error("Input cannot be empty");
+    }
+    // ... more validation logic ...
+    return input.trim();
+  });
+  if (err) return [null, err] as const; // Propagate the error
+  return [validated, null] as const;
+}
+
+async function processData(input: string) {
+  let [validatedInput, validationErr] = validateInput(input);
+  if (validationErr) return [null, validationErr] as const; // Propagate
+
+  let [data, fetchErr] = await go(fetch(`/api/data?input=${validatedInput}`));
+  if (fetchErr) return [null, fetchErr] as const; // Propagate
+
+  return [data, null] as const;
+}
+
+async function main() {
+    let [finalResult, finalError] = await processData(""); // Empty input
+    if(finalError) {
+        console.error("Processing failed:", finalError.message); // Output: Processing failed: Input cannot be empty
+    } else {
+        console.log("Processing successful:", finalResult);
+    }
+}
+
+main();
+```
+
+**Key Principles:**
+
+*   **Early Returns:**  Use early returns (`if (err) return [null, err] as const;`) to handle errors as soon as they occur.
+*   **Explicit Propagation:**  Return the `Result` tuple from functions, allowing the caller to handle the error.
+*   **`as const`:** Use `as const` when returning `Result` tuples to ensure TypeScript infers the correct tuple type (e.g., `readonly [null, Error]` instead of `(string | null)[]`).
+
+## Preserving Error Context
+
+When propagating errors, it's often crucial to preserve the original error context.  You can achieve this by:
+
+1.  **Using Custom Error Classes:** Create custom error classes that extend `Error` and add properties to store relevant context.
+
+    ```typescript
+    class ValidationError extends Error {
+      constructor(message: string, public field: string) {
+        super(message);
+        this.name = 'ValidationError'; // Important for distinguishing error types
+      }
+    }
+
+    let [_, err] = goSync(() => {
+        if (input.length < 3) {
+            throw new ValidationError("Input is too short", "inputField");
+        }
+    });
+
+    if(err) {
+        if(err instanceof ValidationError) {
+            console.error(`Validation error on field ${err.field}: ${err.message}`);
+        } else {
+            console.error("An unexpected error occurred:", err.message);
+        }
+    }
+    ```
+
+2.  **Using the `cause` Option (Error Chaining):**  The `Error` constructor in modern JavaScript environments accepts a `cause` option. This allows you to chain errors, preserving the original error while adding additional context.
+
+    ```typescript
+    function validateInput(input: string) {
+      let [validated, err] = goSync(() => {
+        if (!input) {
+          throw new Error("Input cannot be empty");
+        }
+        // ... more validation logic ...
+        return input.trim();
+      });
+      if (err) {
+          return [null, new Error("Validation failed", { cause: err })] as const; // Add context
+      }
+      return [validated, null] as const;
+    }
+
+    let [_, err] = validateInput("");
+    if(err) {
+        console.error(err.message); // Output: Validation failed
+        console.error(err.cause); // Output: Error: Input cannot be empty
+    }
+    ```
+
+## Common Error Handling Patterns
+
+### Sequential Operations
+
+```typescript
+async function processUserData(userId: string) {
+  let [user, userErr] = await goFetch<User>(`/api/users/${userId}`);
+  if (userErr) return [null, userErr] as const;
+
+  let [validatedUser, validationErr] = goSync(() => validateUser(user));
+  if (validationErr) return [null, validationErr] as const;
+
+  let [savedUser, saveErr] = await go(saveUserToDatabase(validatedUser));
+  if (saveErr) return [null, saveErr] as const;
+
+  return [savedUser, null] as const;
+}
+```
+
+### Parallel Operations (with `Promise.all`)
+
+```typescript
+async function fetchMultipleResources() {
+    const [
+        userResultPromise,
+        postsResultPromise
+    ] = await Promise.all([
+        goFetch<User>('/api/user'),
+        goFetch<Post[]>('/api/posts')
+    ]);
+
+    const [user, userErr] = userResultPromise;
+    const [posts, postsErr] = postsResultPromise;
+
+    if (userErr) {
+        console.error("Failed to fetch user:", userErr);
+        return [null, userErr] as const;
+    }
+    if (postsErr) {
+        console.error("Failed to fetch posts:", postsErr);
+        return [null, postsErr] as const;
+    }
+
+    return [{ user, posts }, null] as const;
+}
+```
+
+## Best Practices
+
+*   **Always Use `let`:** Use `let` for `Result` tuple declarations to allow for error variable reuse.
+*   **Check Errors First:** Always check for errors (`if (err)`) before attempting to use the value.
+*   **Use `as const`:** Use `as const` when returning `Result` tuples for precise type inference.
+*   **Use `errorTransformer`:** Leverage `goFetch`'s `errorTransformer` for consistent error types and centralized error handling.
+*   **Preserve Context:** Use custom error classes or the `cause` option to preserve error context during propagation.
+*   **Consider Error Boundaries (React):** In React applications, combine `go-errors` with error boundaries to gracefully handle errors in your UI.
+
+## See Also
+
+*   **[Core Functions Overview](/docs/fundamentals/core-functions-overview):**  Quick reference for `goSync`, `go`, and `goFetch`.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Detailed explanation of the `Result` type.
+* **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):** Create and use your own error types.

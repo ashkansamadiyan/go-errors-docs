@@ -16,8 +16,24 @@ export const ROUTES: EachRoute[] = [
     items: [
       { title: "Introduction", href: "/introduction" },
       { title: "Installation", href: "/installation" },
-      { title: "Quick Start Guide", href: "/quick-start-guide" },
-      { title: "Core Concepts", href: "/core-concepts" }
+    ],
+  },
+  {
+    title: "Fundamentals",
+    href: "/fundamentals",
+    noLink: true,
+    items: [
+      {
+        title: "Introduction to Go-style Errors",
+        href: "/introduction-to-go-style-errors",
+      },
+      { title: "The Result Type", href: "/the-result-type" },
+      { title: "Core Functions Overview", href: "/core-functions-overview" },
+      { title: "Error Handling in go-errors", href: "/error-handling-in-go-errors" },
+      {
+        title: "Working with Custom Error Types",
+        href: "/working-with-custom-error-types",
+      },
     ],
   },
   {
@@ -25,49 +41,44 @@ export const ROUTES: EachRoute[] = [
     href: "/api-reference",
     noLink: true,
     items: [
-      { title: "Core Functions", href: "/core-functions" },
-      { title: "Types", href: "/types" },
-      { title: "Error Handling", href: "/error-handling" },
-      { title: "Go", href: "/go" },
-      { title: "goFetch", href: "/goFetch" },
-      { title: "Unified Go", href: "/unified-go" }
+      { title: "goSync Function", href: "/go-sync-function" },
+      { title: "go Function", href: "/go-function" },
+      { title: "goFetch Function", href: "/go-fetch-function" },
+      { title: "unifiedGo Function", href: "/unified-go-function" },
+      { title: "Type Definitions", href: "/type-definitions" }
     ],
   },
   {
-    title: "Guides",
-    href: "/guides",
+    title: "Usage Guides",
+    href: "/usage-guides",
     noLink: true,
     items: [
-      // Basic Concepts
-      { title: "Basic Usage", href: "/basic-usage" },
-      { title: "HTTP Requests", href: "/http-requests" },
-      
-      // Advanced Topics
-      { title: "Advanced Features", href: "/advanced-features" },
-      { title: "Advanced Patterns", href: "/advanced-patterns" },
-      { title: "Best Practices", href: "/best-practices" },
-      
-      // Error Handling
-      { title: "Error Handling", href: "/error-handling" },
-      { title: "Error Normalization", href: "/error-normalization" },
-      { title: "Edge Cases", href: "/edge-cases" },
-      { title: "Type Safety", href: "/type-safety" },
-      
-      // Async Programming
-      { title: "Async Patterns", href: "/async-patterns" },
-      { title: "Function Differences", href: "/function-differences" }
+      { title: "Basic Usage Patterns", href: "/basic-usage-patterns" },
+      {
+        title: "Making HTTP Requests with goFetch",
+        href: "/making-http-requests-with-go-fetch",
+      },
+      {
+        title: "Advanced Usage and Patterns",
+        href: "/advanced-usage-and-patterns",
+        noLink: true,
+        items: [
+          {
+            title: "Advanced Features",
+            href: "/advanced-features",
+          },
+          {
+            title: "Advanced Patterns",
+            href: "/advanced-patterns",
+          }
+        ]
+      },
+      {
+        title: "Asynchronous Programming with go-errors",
+        href: "/asynchronous-programming-with-go-errors",
+      },
     ],
   },
-  {
-    title: "Examples",
-    href: "/examples",
-    noLink: true,
-    items: [
-      { title: "Basic Usage", href: "/basic-usage" },
-      { title: "Error Propagation", href: "/error-propagation" },
-      { title: "Custom Error Types", href: "/custom-error-types" }
-    ],
-  }
 ];
 
 type Page = { title: string; href: string };

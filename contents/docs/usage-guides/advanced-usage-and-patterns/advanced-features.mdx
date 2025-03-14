@@ -1,0 +1,287 @@
+---
+title: Advanced Features
+description: Explore advanced features of go-errors, including custom error types and interceptors.
+---
+
+# Advanced Features
+
+This page details advanced features provided by the `go-errors` library, focusing on how to extend and customize its behavior for complex scenarios.
+
+## Custom Error Types
+
+Creating custom error types allows for more specific and informative error handling. You can define hierarchies of error types to represent different categories of errors within your application.
+
+### Hierarchical Error Types
+
+```typescript
+// Base application error
+class AppError extends Error {
+  constructor(
+    message: string,
+    public code: number = 500,
+    public details?: Record<string, unknown>
+  ) {
+    super(message);
+    this.name = 'AppError';
+  }
+}
+
+// Specific error types inheriting from AppError
+class ValidationError extends AppError {
+  constructor(
+    public field: string,
+    message: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, 400, details);
+    this.name = 'ValidationError';
+  }
+}
+
+class NotFoundError extends AppError {
+  constructor(
+    public resource: string,
+    message?: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message || `${resource} not found`, 404, details);
+    this.name = 'NotFoundError';
+  }
+}
+
+class AuthError extends AppError {
+  constructor(
+    message: string,
+    details?: Record<string, unknown>
+  ) {
+    super(message, 401, details);
+    this.name = 'AuthError';
+  }
+}
+
+// Usage
+function findUser(id: string) {
+  let [user, err] = goSync<User, AppError>(() => {
+    if (!isAuthenticated()) {
+      throw new AuthError('Not authenticated');
+    }
+
+    const user = users.find(u => u.id === id);
+    if (!user) {
+      throw new NotFoundError('User', `User ${id} not found`);
+    }
+
+    return user;
+  });
+
+  return [user, err] as const;
+}
+```
+
+This example demonstrates a base `AppError` and several specific error types extending it.  This allows you to catch errors at different levels of granularity:
+
+```typescript
+let [user, err] = findUser("123");
+if (err) {
+    if (err instanceof AuthError) {
+        // Handle authentication errors
+    } else if (err instanceof NotFoundError) {
+        // Handle not found errors
+    } else if (err instanceof ValidationError) {
+        // Handle validation errors
+    } else if (err instanceof AppError) {
+        // Handle any other application error
+    } else {
+        // Handle unexpected errors (shouldn't normally happen)
+    }
+}
+```
+
+## Advanced Error Handling
+
+### Error Aggregation
+
+Sometimes, you might want to collect multiple errors before handling them.  `go-errors` doesn't provide a built-in aggregation mechanism, but you can easily create your own:
+
+```typescript
+class AggregateError extends Error {
+  constructor(
+    public errors: Error[],
+    message?: string
+  ) {
+    super(message || `Multiple errors occurred (${errors.length})`);
+    this.name = 'AggregateError';
+  }
+}
+
+async function validateUserBatch(users: User[]) {
+  const errors: Error[] = [];
+  const validUsers: User[] = [];
+
+  for (const user of users) {
+    let [valid, err] = goSync(() => validateUser(user)); // Assuming validateUser is defined elsewhere
+    if (err) {
+      errors.push(err);
+      continue;
+    }
+    validUsers.push(user);
+  }
+
+  if (errors.length > 0) {
+    return [null, new AggregateError(errors)] as const;
+  }
+
+  return [validUsers, null] as const;
+}
+```
+
+### Error Transformation
+
+You can transform errors into a consistent format using the `errorTransformer` option in `goFetch`:
+
+```typescript
+interface ApiError {
+  code: number;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+function transformError(error: unknown): ApiError {
+  if (error instanceof ValidationError) {
+    return {
+      code: 400,
+      message: error.message,
+      details: { field: error.field },
+    };
+  }
+
+  if (error instanceof NotFoundError) {
+    return {
+      code: 404,
+      message: error.message,
+      details: { resource: error.resource },
+    };
+  }
+
+  if (error instanceof AuthError) {
+    return {
+      code: 401,
+      message: error.message,
+    };
+  }
+
+  if (error instanceof Error) {
+    return {
+      code: 500,
+      message: error.message,
+    };
+  }
+
+  return {
+    code: 500,
+    message: 'Unknown error occurred',
+  };
+}
+
+// Usage with goFetch
+let [data, err] = await goFetch<User, ApiError>('/api/user', {
+  errorTransformer: transformError,
+});
+```
+
+## Request/Response Interception
+
+You can create interceptors to modify requests before they are sent and responses/errors before they are returned. This is useful for adding authentication headers, transforming data, or handling errors globally.
+
+```typescript
+interface RequestInterceptor {
+  onRequest?: (config: RequestInit) => RequestInit;
+  onResponse?: <T>(response: T) => T;
+  onError?: (error: unknown) => unknown;
+}
+
+function createApiClient(baseUrl: string, interceptors: RequestInterceptor[]) {
+  return async function request<T, E = Error>(
+    path: string,
+    options?: RequestInit
+  ): Promise<Result<T, E>> {
+    // Apply request interceptors
+    let config = { ...options };
+    for (const interceptor of interceptors) {
+      if (interceptor.onRequest) {
+        config = interceptor.onRequest(config);
+      }
+    }
+
+    let [response, err] = await goFetch<T, E>(
+      `${baseUrl}${path}`,
+      {
+        ...config,
+        responseTransformer: (data) => {
+          let transformed = data;
+          // Apply response interceptors
+          for (const interceptor of interceptors) {
+            if (interceptor.onResponse) {
+              transformed = interceptor.onResponse(transformed);
+            }
+          }
+          return transformed as T;
+        },
+        errorTransformer: (error) => {
+          let transformed = error;
+          // Apply error interceptors
+          for (const interceptor of interceptors) {
+            if (interceptor.onError) {
+              transformed = interceptor.onError(transformed);
+            }
+          }
+          return transformed as E;
+        },
+      }
+    );
+
+    return [response, err] as const;
+  };
+}
+
+// Example interceptors
+const authInterceptor: RequestInterceptor = {
+    onRequest: (config) => {
+        const token = localStorage.getItem('token'); // Or get the token from wherever you store it
+        if (token) {
+            return {
+                ...config,
+                headers: {
+                    ...config.headers,
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+        }
+        return config;
+    }
+};
+
+const loggingInterceptor: RequestInterceptor = {
+    onResponse: (response) => {
+        console.log('Response:', response);
+        return response;
+    },
+    onError: (error) => {
+        console.error('Error:', error);
+        return error;
+    }
+};
+
+// Usage
+const api = createApiClient('https://api.example.com', [authInterceptor, loggingInterceptor]);
+
+let [user, err] = await api<User>('/users/1');
+
+```
+
+## See Also
+
+- **[Advanced Patterns](/docs/usage-guides/advanced-usage-and-patterns/advanced-patterns):** Explore advanced usage patterns.
+- **[goFetch Function](/docs/api-reference/go-fetch-function):**  `goFetch` API reference.
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+- **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.

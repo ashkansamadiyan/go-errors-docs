@@ -1,0 +1,55 @@
+---
+title: Type Definitions
+description: Reference for core types in go-errors.
+---
+
+# Type Definitions
+
+This page provides a concise reference for the core types used in `go-errors`.
+
+## `Result<T, E>`
+
+The fundamental type representing the result of an operation that can either succeed or fail.
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+*   **`T`**: The type of the successful value.
+*   **`E`**: The type of the error (defaults to `Error`).
+
+**Possible Values:**
+
+*   `[value, null]`: Represents a successful operation, where `value` is of type `T`.
+*   `[null, error]`: Represents a failed operation, where `error` is of type `E`.
+
+**Readonly:** The tuple is `readonly` to prevent accidental modification.
+
+**Example:**
+
+```typescript
+import { goSync } from 'go-errors';
+
+let [result, err] = goSync(() => 42); // Result<number, Error>
+```
+
+## `GoFetchOptions<T, E>`
+
+Extends the standard `RequestInit` interface with options specific to `goFetch`.
+
+```typescript
+interface GoFetchOptions<T, E = Error> extends RequestInit {
+  responseTransformer?: (data: unknown) => T;
+  errorTransformer?: (error: unknown) => E;
+}
+```
+
+*   **`responseTransformer?: (data: unknown) => T`**: Transforms the raw response data into the desired type `T`.
+*   **`errorTransformer?: (error: unknown) => E`**: Transforms any error encountered during the fetch operation into the desired error type `E`.
+
+**Inherits all properties from `RequestInit`**, such as `method`, `headers`, `body`, etc.
+
+## See Also
+
+- [The Result Type (Detailed Explanation)](/docs/fundamentals/the-result-type)
+- [goFetch Function](/docs/api-reference/go-fetch-function)

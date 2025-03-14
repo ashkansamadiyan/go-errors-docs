@@ -1,0 +1,145 @@
+---
+title: Working with Custom Error Types
+description: Defining and using custom error types with go-errors.
+---
+
+# Working with Custom Error Types
+
+`go-errors` allows you to define and use your own custom error types. This is highly recommended for creating robust and maintainable applications.  Custom error types provide several benefits:
+
+*   **Improved Type Safety:**  You can use TypeScript's type system to distinguish between different types of errors.
+*   **Better Error Handling:**  You can handle specific error types differently, providing more granular error handling logic.
+*   **Contextual Information:**  You can add properties to your custom error types to store additional context about the error (e.g., the field that failed validation, the HTTP status code, etc.).
+*   **Clearer Code:**  Custom error types make your code more readable and self-documenting.
+
+## Defining Custom Error Types
+
+The recommended way to define custom error types is to create classes that extend the built-in `Error` class.
+
+```typescript
+// Basic custom error class
+class MyCustomError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'MyCustomError'; // Important: Set the 'name' property
+  }
+}
+
+// Custom error with additional context
+class ValidationError extends Error {
+  constructor(message: string, public field: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+// Custom error with a hierarchy
+class ApiError extends Error {
+    constructor(message: string, public status: number) {
+        super(message);
+        this.name = 'ApiError';
+    }
+}
+
+class NotFoundError extends ApiError {
+    constructor(message: string, public resourceId: string) {
+        super(message, 404);
+        this.name = 'NotFoundError';
+    }
+}
+```
+
+**Key Points:**
+
+*   **Extend `Error`:**  Always extend the built-in `Error` class.
+*   **Set `name`:**  Set the `name` property of your custom error class.  This is crucial for distinguishing between different error types, especially when using `instanceof`.
+*   **Add Context:**  Add properties to your custom error classes to store relevant context, such as the field that caused a validation error, an HTTP status code, or a resource ID.
+
+## Using Custom Error Types with `goSync` and `go`
+
+You can use your custom error types with `goSync` and `go` by specifying them as the `E` type parameter in the `Result<T, E>` type.
+
+```typescript
+import { goSync, go } from 'go-errors';
+
+// Using goSync with a custom error
+let [result, err] = goSync<string, ValidationError>(() => {
+  if (input.length < 5) {
+    throw new ValidationError("Input is too short", "inputField");
+  }
+  return input.toUpperCase();
+});
+
+if (err) {
+  console.error("Validation Error:", err.message, "Field:", err.field);
+} else {
+  console.log("Result:", result);
+}
+
+// Using go with a custom error hierarchy
+async function fetchData(): Promise<string> {
+    const response = await fetch('/api/data');
+    if(!response.ok) {
+        if(response.status === 404) {
+            throw new NotFoundError("Resource not found", "some-resource-id");
+        } else {
+            throw new ApiError("API request failed", response.status);
+        }
+    }
+    return response.text();
+}
+
+async function main() {
+    let [data, err] = await go<string, ApiError>(fetchData());
+    if(err) {
+        if(err instanceof NotFoundError) {
+            console.error("Resource not found:", err.message, "Resource ID:", err.resourceId);
+        } else if (err instanceof ApiError) {
+            console.error("API Error:", err.message, "Status:", err.status);
+        } else {
+            console.error("An unexpected error occurred:", err); // This should never happen with proper type definitions
+        }
+    } else {
+        console.log("Data:", data);
+    }
+}
+main();
+```
+
+## Using Custom Error Types with `goFetch`
+
+The `errorTransformer` option in `goFetch` is particularly useful for working with custom error types.  You can use it to transform raw errors (like `Response` objects from `fetch`) into your custom error types.
+
+```typescript
+import { goFetch } from 'go-errors';
+
+let [data, err] = await goFetch<MyData, ApiError>('/api/data', {
+  errorTransformer: (error) => {
+    if (error instanceof Response) {
+      return new ApiError(`HTTP Error: ${error.status}`, error.status);
+    }
+    if (error instanceof Error) {
+      return new ApiError(error.message, 500); // Default to 500 for other errors
+    }
+    return new ApiError("An unknown error occurred", 500);
+  },
+});
+
+if (err) {
+  console.error("API Error:", err.message, "Status:", err.status);
+}
+```
+
+## Best Practices
+
+*   **Create Specific Error Types:**  Create error types that are specific to your application's domain and error scenarios (e.g., `ValidationError`, `AuthenticationError`, `DatabaseError`, `NetworkError`).
+*   **Use Error Hierarchies:**  Consider creating error hierarchies (e.g., a base `AppError` class with more specific subclasses) to organize your error types and handle them at different levels of granularity.
+*   **Add Contextual Information:**  Include relevant properties in your custom error types to provide more context for debugging and error reporting.
+*   **Use `instanceof`:** Use `instanceof` to check the type of an error and handle it accordingly.
+*   **Consistent Transformation:** Use the `errorTransformer` in `goFetch` to consistently transform API errors into your custom error types.
+
+## See Also
+
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):**  Learn more about general error handling principles.
+- **[The Result Type](/docs/fundamentals/the-result-type):** Understand the `Result` type.
+- **[Core Functions Overview](/docs/fundamentals/core-functions-overview):**  Get an overview of `goSync`, `go`, and `goFetch`.

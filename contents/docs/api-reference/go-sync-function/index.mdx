@@ -1,0 +1,143 @@
+---
+title: goSync Function
+description: Detailed documentation for the goSync function in go-errors.
+---
+
+# `goSync` Function
+
+The `goSync` function is designed for handling *synchronous* operations that might throw errors. It provides a clean, Go-style error handling pattern without the need for `try-catch` blocks.
+
+## Type Signature
+
+```typescript
+function goSync<T, E = Error>(fn: () => T): Result<T, E>;
+```
+
+**Type Parameters:**
+
+*   `T`: The type of the successful value (the return type of the provided function).
+*   `E`: The type of the error. Defaults to `Error` if not specified.
+
+**Parameters:**
+
+*   `fn`: A *synchronous* function that returns a value of type `T` or throws an error.
+
+**Returns:**
+
+*   `Result<T, E>`: A tuple representing the outcome of the operation:
+    *   `[value, null]`: If `fn` executes successfully, `value` will be the return value of `fn` (of type `T`), and `null` indicates no error.
+    *   `[null, error]`: If `fn` throws an error, `error` will be the thrown error (of type `E`), and `null` indicates no value.
+
+## Basic Usage
+
+```typescript
+import { goSync } from 'go-errors';
+
+let [result, err] = goSync(() => {
+  return 42;
+});
+
+if (err) {
+  console.error("Error:", err); // This won't be reached
+} else {
+  console.log("Result:", result); // Output: Result: 42
+}
+
+let [result2, err2] = goSync(() => {
+  throw new Error("Something went wrong!");
+});
+
+if (err2) {
+  console.error("Error:", err2.message); // Output: Error: Something went wrong!
+} else {
+  console.log("Result:", result2); // This won't be reached
+}
+```
+
+**Explanation:**
+
+1.  `goSync` takes a synchronous function (`fn`) as its argument.
+2.  It executes the function *within* a `try-catch` block *internally*.
+3.  If the function executes successfully, `goSync` returns a tuple: `[returnValue, null]`.
+4.  If the function throws an error, `goSync` returns a tuple: `[null, error]`.
+5.  You use destructuring (`let [result, err] = ...`) to get the result and the potential error.
+6.  You then use a simple `if (err)` check to handle the error.
+
+## Custom Error Types
+
+You can use custom error types with `goSync` to improve type safety and provide more context about errors.
+
+```typescript
+import { goSync } from 'go-errors';
+
+class ValidationError extends Error {
+  constructor(message: string, public field: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+function validateInput(input: string): string {
+  if (input.length < 3) {
+    throw new ValidationError("Input is too short", "inputField");
+  }
+  return input.toUpperCase();
+}
+
+let [result, err] = goSync<string, ValidationError>(() => validateInput("abc"));
+
+if (err) {
+  if (err instanceof ValidationError) {
+    console.error("Validation Error:", err.message, "Field:", err.field);
+  } else {
+    console.error("Unexpected Error:", err); // Ideally, this shouldn't happen
+  }
+} else {
+  console.log("Result:", result);
+}
+```
+
+**Key Points:**
+
+*   **Type Parameter:** We use `goSync<string, ValidationError>` to specify the success type (`string`) and the custom error type (`ValidationError`).
+*   **`instanceof` Check:** We use `instanceof ValidationError` to check if the error is a `ValidationError`. This allows us to handle validation errors specifically.
+*   **Error Context:** The `ValidationError` class includes a `field` property, providing additional context about the error.
+
+## Error Propagation
+
+```typescript
+
+function validateInput(input:string){
+    let [validated, err] = goSync<string,ValidationError>(()=>{
+        if(input.length < 3) throw new ValidationError('input too short', 'input')
+        return input.toUpperCase()
+    })
+    if(err) return [null, err] as const
+    return [validated, null] as const
+}
+
+function processInput(input:string){
+    let [processed, err] = validateInput(input)
+    if(err) return [null, err] as const // same error is propagated
+    // do something with processed input
+    return [processed, null] as const
+}
+```
+
+## Best Practices
+
+*   **Always Use `let`:** Use `let` for `Result` tuple declarations.
+*   **Explicit Type Parameters:** Specify type parameters (`<T, E>`) for better type safety.
+*   **Early Returns:** Use early returns to handle errors as soon as they occur.
+*   **`as const`:** Use `as const` when returning `Result` tuples.
+*   **Custom Error Types:** Define and use custom error types for better error handling and context.
+* **Do not use with async functions:** `goSync` is for synchronous operations only. Use `go` or `goFetch` for asynchronous operations.
+
+## See Also
+
+*   **[go Function](/docs/api-reference/go-function):**  For asynchronous operations.
+*   **[unifiedGo Function](/docs/api-reference/unified-go-function):** For both synchronous and asynchronous operations.
+*   **[goFetch Function](/docs/api-reference/go-fetch-function):**  For HTTP requests.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Detailed explanation of the `Result` type.
+*   **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+*   **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.
