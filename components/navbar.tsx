@@ -18,11 +18,11 @@ export const NAVLINKS = [
   },
   {
     title: "API Reference",
-    href: "/docs/api-reference/core-functions",
+    href: "/docs/api-reference",
   },
   {
     title: "Guides",
-    href: "/docs/guides/best-practices",
+    href: "/docs/usage-guides",
   },
   {
     title: "Blog",
