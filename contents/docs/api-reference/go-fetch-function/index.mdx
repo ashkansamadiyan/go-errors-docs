@@ -1,0 +1,249 @@
+---
+title: goFetch Function
+description: A powerful wrapper around the Fetch API with Go-style error handling and built-in data transformation.
+---
+
+# `goFetch` Function
+
+The `goFetch` function provides a convenient and type-safe way to make HTTP requests, inspired by Go's error handling pattern. It wraps the native `fetch` API and adds features like response and error transformation.
+
+## Type Signature
+
+```typescript
+function goFetch<T, E = Error>(
+  input: RequestInfo | URL,
+  init?: GoFetchOptions<T, E>
+): Promise<Result<T, E>>;
+```
+
+**Type Parameters:**
+
+*   `T`: The type of the transformed response data.
+*   `E`: The type of the transformed error. Defaults to `Error`.
+
+**Parameters:**
+
+*   `input`:  The resource to fetch (same as the first argument to `fetch`).  Can be a `string`, `Request`, or `URL` object.
+*   `init` (optional):  An `GoFetchOptions` object, which extends the standard `RequestInit` object with additional options for `goFetch`.
+
+**Returns:**
+
+*   `Promise<Result<T, E>>`: A Promise that *always* resolves to a `Result<T, E>` tuple:
+    *   `[data, null]` if the request is successful (and the `responseTransformer` completes successfully).
+    *   `[null, error]` if the request fails or the `responseTransformer` throws an error.
+
+## `GoFetchOptions` Interface
+
+```typescript
+interface GoFetchOptions<T, E = Error> extends RequestInit {
+  responseTransformer?: (data: unknown) => T;
+  errorTransformer?: (error: unknown) => E;
+}
+```
+
+*   **`responseTransformer?: (data: unknown) => T`**:  An optional function that transforms the raw response data (after being parsed as JSON if the `Content-Type` is `application/json`) into the desired type `T`.  If not provided, `goFetch` attempts to parse the response as JSON and returns the result as `unknown`. If the response cannot be parsed as JSON, the raw `Response` object is passed to the `responseTransformer`.
+*   **`errorTransformer?: (error: unknown) => E`**: An optional function that transforms any error encountered during the fetch operation (network errors, HTTP errors, errors thrown by `responseTransformer`) into the desired error type `E`. If not provided, the error is normalized to an `Error` object.
+
+**All standard `RequestInit` options are also supported**, such as `method`, `headers`, `body`, `mode`, `credentials`, `cache`, etc.
+
+## Basic Usage
+
+```typescript
+import { goFetch } from 'go-errors';
+
+async function main() {
+  let [data, err] = await goFetch('/api/data'); // Simple GET request
+
+  if (err) {
+    console.error("Fetch failed:", err);
+  } else {
+    console.log("Data:", data); // data is of type 'unknown'
+  }
+}
+main();
+```
+
+## Type-Safe Usage with `responseTransformer`
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+async function getUser() {
+  let [user, err] = await goFetch<User>('/api/users/123', {
+    responseTransformer: (data: any) => {
+      // You can perform validation and transformation here
+      if (typeof data !== 'object' || data === null || !data.id || !data.name || !data.email) {
+        throw new Error("Invalid user data received");
+      }
+      return {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+      };
+    },
+  });
+
+  if (err) {
+    console.error("Failed to fetch user:", err);
+  } else {
+    console.log("User:", user); // user is of type User
+  }
+}
+getUser();
+```
+
+**Explanation:**
+
+*   We use `goFetch<User>` to specify that we expect the transformed response data to be of type `User`.
+*   The `responseTransformer` function receives the raw response data (already parsed as JSON if the `Content-Type` is `application/json`).
+*   Inside `responseTransformer`, we perform validation and transform the data into the desired `User` object.  If the data is invalid, we throw an error.
+*   If `responseTransformer` throws an error, `goFetch` will catch it and return a `Result` tuple with the error.
+
+## Handling Errors with `errorTransformer`
+
+```typescript
+import { goFetch } from 'go-errors';
+
+class ApiError extends Error {
+    constructor(message: string, public status: number, public code?: string) {
+        super(message);
+        this.name = 'ApiError';
+    }
+}
+
+async function getData() {
+  let [data, err] = await goFetch<MyDataType, ApiError>('/api/data', {
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        // Handle HTTP errors
+        return new ApiError(`HTTP Error: ${error.status}`, error.status);
+      }
+      if (error instanceof Error) {
+        // Handle other errors (e.g., network errors, errors from responseTransformer)
+        return new ApiError(error.message, 500); // Default to 500 for other errors
+      }
+      // Handle unexpected error types
+      return new ApiError("An unknown error occurred", 500);
+    },
+  });
+
+  if (err) {
+    if (err instanceof ApiError) {
+      console.error("API Error:", err.message, "Status:", err.status);
+    } else {
+      console.error("Unexpected Error:", err); // This should ideally not happen
+    }
+  } else {
+    console.log("Data:", data);
+  }
+}
+getData();
+```
+
+**Explanation:**
+
+*   We define a custom `ApiError` class to represent API errors.
+*   We use `goFetch<MyDataType, ApiError>` to specify the expected data type and the custom error type.
+*   The `errorTransformer` function receives the raw error (which could be a `Response` object, an `Error` object, or something else).
+*   Inside `errorTransformer`, we check the type of the error and transform it into an `ApiError` instance.
+*   This allows us to handle all errors in a consistent way, using our custom `ApiError` type.
+
+## POST, PUT, DELETE Requests
+
+```typescript
+async function createUser() {
+    let [user, err] = await goFetch<User>('/api/users', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'John Doe', email: 'john.doe@example.com' }),
+        responseTransformer: (data: any) => data as User, // Simple transformation
+    });
+
+    if (err) {
+        console.error("Failed to create user:", err);
+    } else {
+        console.log("Created user:", user);
+    }
+}
+```
+
+## Combining `responseTransformer` and `errorTransformer`
+
+```typescript
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+class ValidationError extends Error {
+    constructor(message: string, public field: string) {
+        super(message);
+        this.name = 'ValidationError';
+    }
+}
+
+async function updateUser(id: number, updates: Partial<User>) {
+    let [updatedUser, err] = await goFetch<User, ValidationError | ApiError>(`/api/users/${id}`, {
+        method: 'PATCH', // Or 'PUT'
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(updates),
+        responseTransformer: (data: any) => {
+            if (!data.id || !data.name || !data.email) {
+                throw new ValidationError("Invalid user data received", "response");
+            }
+            return data as User;
+        },
+        errorTransformer: (error) => {
+            if (error instanceof ValidationError) {
+                return error; // Already a ValidationError
+            }
+            if (error instanceof Response) {
+                return new ApiError(`HTTP Error: ${error.status}`, error.status);
+            }
+            return new ApiError("An unknown error occurred", 500);
+        },
+    });
+
+    if (err) {
+        if (err instanceof ValidationError) {
+            console.error("Validation Error:", err.message, "Field:", err.field);
+        } else if (err instanceof ApiError) {
+            console.error("API Error:", err.message, "Status:", err.status);
+        } else {
+            console.error("Unexpected Error:", err);
+        }
+    } else {
+        console.log("Updated user:", updatedUser);
+    }
+}
+```
+
+## Best Practices
+
+*   **Use Type Parameters:** Always specify the `T` and `E` type parameters for `goFetch` to leverage TypeScript's type safety.
+*   **Use `responseTransformer`:**  Use `responseTransformer` to validate and transform the response data into the expected type.  This ensures that you're working with data in the correct format.
+*   **Use `errorTransformer`:** Use `errorTransformer` to transform errors into custom error types or a consistent error format. This centralizes error handling and makes your code more maintainable.
+*   **Handle All Error Cases:**  In your `errorTransformer`, handle different types of errors (e.g., `Response` objects for HTTP errors, `Error` objects for network or other errors).
+*   **Early Returns:** Use early returns (`if (err) return [null, err] as const;`) to handle errors as soon as they occur.
+*   **Custom Error Classes:** Define custom error classes that extend `Error` to provide more context and structure to your errors.
+* **Always use `let`:** Use `let` for result declarations.
+
+## See Also
+
+*   **[go Function](/docs/api-reference/go-function):**  For general asynchronous operations.
+*   **[goSync Function](/docs/api-reference/go-sync-function):**  For synchronous operations.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Detailed explanation of the `Result` type.
+*   **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+*   **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.
+*   **[MDN Documentation for Fetch API](https://developer.mozilla.org/en-US/docs/Web/API/fetch):**  For details on the underlying `fetch` API.

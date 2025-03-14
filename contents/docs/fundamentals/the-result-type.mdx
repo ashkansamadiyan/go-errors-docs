@@ -1,0 +1,107 @@
+---
+title: The Result Type
+description: Understanding the core Result<T, E> type in go-errors.
+---
+
+# The Result Type
+
+The `Result<T, E>` type is the foundation of `go-errors`. It represents the outcome of an operation that can either succeed with a value of type `T` or fail with an error of type `E`.
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+**Type Parameters:**
+
+*   `T`: The type of the successful value.
+*   `E`: The type of the error. Defaults to `Error` if not specified.
+
+**Structure:**
+
+The `Result` type is a TypeScript tuple with two elements, representing two possible states:
+
+1.  **Success:** `[value, null]`
+    *   The first element (`value`) holds the successful result of type `T`.
+    *   The second element is always `null`, indicating no error.
+
+2.  **Failure:** `[null, error]`
+    *   The first element is always `null`, indicating no value.
+    *   The second element (`error`) holds the error of type `E` that occurred.
+
+**Readonly:** The tuple is `readonly` to prevent accidental modification of the result.
+
+**Example:**
+
+```typescript
+import { goSync } from 'go-errors';
+
+// Success case:
+let [result, err] = goSync(() => 42); // result is 42, err is null
+if (err) {
+    console.error("Operation failed:", err);
+} else {
+    console.log("Operation succeeded:", result);
+}
+
+// Error case:
+let [result, err] = goSync(() => { throw new Error("Something went wrong") }); // result is null, err is Error
+if (err) {
+    console.error("Operation failed:", err.message);
+} else {
+    console.log("Operation succeeded:", result); // This won't be reached
+}
+
+// Custom Error Type
+interface MyError {
+  code: string;
+  message: string;
+}
+
+let [data, myErr] = goSync<string, MyError>(() => {
+    if (someCondition) {
+        return "Success!";
+    } else {
+        throw { code: "MY_ERROR", message: "Custom error occurred" };
+    }
+});
+
+if (myErr) {
+    console.error("Custom error:", myErr.code, myErr.message);
+} else {
+    console.log("Data:", data);
+}
+
+```
+
+## Type Safety
+
+`Result<T, E>` leverages TypeScript's type system to ensure type safety:
+
+```typescript
+function processResult<T, E>(result: Result<T, E>): T {
+  let [value, err] = result;
+  if (err) {
+    // Inside this block, TypeScript knows:
+    // - value is null
+    // - err is of type E
+    throw err; // We can safely throw the error
+  }
+  // Outside the block, TypeScript knows:
+  // - value is of type T
+  // - err is null
+  return value; // We can safely return the value
+}
+```
+
+## Best Practices
+
+*   **Always use `let`:** Use `let` to declare variables holding `Result` tuples. This allows you to reuse the `err` variable name in subsequent operations, aligning with Go's style.
+*   **Explicit Type Parameters:**  Specify type parameters (`<T, E>`) when using `goSync`, `go`, and `goFetch` for better type safety and clarity.
+*   **`as const` Assertions:** Use `as const` when returning `Result` tuples to ensure the correct tuple type is inferred.
+*   **Check Errors First:** Always check for errors (`if (err)`) before using the potential value.
+
+## See Also
+
+- **[Core Functions Overview](/docs/fundamentals/core-functions-overview):** Learn about the functions that return `Result` tuples.
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Dive deeper into error handling.
+- **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):** Create and use your own error types.

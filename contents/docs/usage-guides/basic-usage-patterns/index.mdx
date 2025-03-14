@@ -1,0 +1,271 @@
+---
+title: Basic Usage Patterns
+description: Learn the fundamental usage patterns of go-errors with practical examples.
+---
+
+# Basic Usage Patterns
+
+This guide covers the fundamental usage patterns of the `go-errors` library, demonstrating how to handle both synchronous and asynchronous operations with Go-style error handling.
+
+## Installation
+
+```bash
+bun add go-errors # or npm install go-errors / yarn add go-errors
+```
+
+## Quick Start
+
+```typescript
+import { goSync, goFetch, go } from 'go-errors';
+
+// Synchronous operation with goSync
+let [value, err] = goSync(() => {
+  if (Math.random() > 0.5) {
+    throw new Error('Something went wrong!');
+  }
+  return 42;
+});
+
+if (err) {
+  console.error('Synchronous operation failed:', err.message);
+} else {
+  console.log('Synchronous operation result:', value);
+}
+
+// Asynchronous operation with goFetch (for HTTP requests)
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+async function fetchUser() {
+    let [user, fetchErr] = await goFetch<User>('/api/users/123', {
+        responseTransformer: (data: any) => ({ id: data.id, name: data.name, email: data.email }), // Example transformation
+    });
+
+    if (fetchErr) {
+        console.error('Failed to fetch user:', fetchErr);
+    } else {
+        console.log('Fetched user:', user);
+    }
+}
+fetchUser();
+
+// Asynchronous operation with go (for general promises)
+async function asyncOperation() {
+    return new Promise<string>((resolve, reject) => {
+        setTimeout(() => {
+            if (Math.random() > 0.5) {
+                resolve("Operation successful!");
+            } else {
+                reject(new Error("Operation failed!"));
+            }
+        }, 500);
+    });
+}
+
+async function main() {
+    let [result, asyncErr] = await go(asyncOperation());
+    if(asyncErr) {
+        console.error("Async operation failed:", asyncErr.message);
+    } else {
+        console.log("Async operation result:", result);
+    }
+}
+main();
+```
+
+## Core Concepts
+
+### The `Result` Type
+
+`go-errors` uses a tuple-based `Result` type to represent the outcome of an operation:
+
+```typescript
+type Result<T, E = Error> = readonly [T, null] | readonly [null, E];
+```
+
+*   **Success:** `[value, null]` - The first element holds the successful result (`value` of type `T`), and the second element is `null`.
+*   **Failure:** `[null, error]` - The first element is `null`, and the second element holds the error (`error` of type `E`).
+
+### Variable Declaration: Always Use `let`
+
+Use `let` to declare variables that will hold the `Result` tuple. This allows you to reuse the `err` variable name in subsequent operations, which is a common pattern in Go.
+
+```typescript
+// ✅ Good: Using let
+let [value1, err] = goSync(() => someOperation());
+if (err) return handleError(err);
+
+let [value2, err] = goSync(() => anotherOperation()); // Reusing 'err'
+if (err) return handleError(err);
+
+// ❌ Avoid: Using const (less idiomatic with go-errors)
+const [value, error] = goSync(() => someOperation());
+```
+
+## Basic Patterns
+
+### Synchronous Operations (`goSync`)
+
+```typescript
+import { goSync } from 'go-errors';
+
+// Example 1: Simple value return
+let [number, err1] = goSync(() => 42);
+if (err1) {
+  console.error("Error:", err1.message); // Won't be reached
+} else {
+  console.log("Number:", number); // Output: Number: 42
+}
+
+// Example 2: With error handling
+function divide(a: number, b: number): [number | null, Error | null] {
+  let [result, err] = goSync(() => {
+    if (b === 0) {
+      throw new Error('Division by zero');
+    }
+    return a / b;
+  });
+  if (err) return [null, err]; // Early return on error
+  return [result, null];
+}
+
+let [quotient, divErr] = divide(10, 0);
+if (divErr) {
+  console.error('Division failed:', divErr.message); // Output: Division failed: Division by zero
+} else {
+  console.log('Result:', quotient);
+}
+```
+
+### Asynchronous Operations (`go` and `goFetch`)
+
+**Using `go` (for general Promises):**
+
+```typescript
+import { go } from 'go-errors';
+
+async function asyncTask(): Promise<string> {
+    return new Promise((resolve, reject) => {
+        setTimeout(() => {
+            if (Math.random() > 0.5) {
+                resolve("Async task successful!");
+            } else {
+                reject(new Error("Async task failed!"));
+            }
+        }, 500);
+    });
+}
+
+async function runAsyncTask() {
+    let [result, err] = await go(asyncTask());
+    if (err) {
+        console.error("Async task error:", err.message);
+    } else {
+        console.log("Async task result:", result);
+    }
+}
+runAsyncTask();
+```
+
+**Using `goFetch` (for HTTP requests):**
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+async function fetchUser() {
+  let [user, err] = await goFetch<User>('/api/users/1', {
+    responseTransformer: (data: any) => {
+      // Validate and transform the response data
+      if (typeof data !== 'object' || data === null || !data.id || !data.name || !data.email) {
+        throw new Error('Invalid user data received');
+      }
+      return { id: data.id, name: data.name, email: data.email };
+    },
+  });
+
+  if (err) {
+    console.error('Failed to fetch user:', err);
+  } else {
+    console.log('Fetched user:', user);
+  }
+}
+
+fetchUser();
+```
+
+### Error Propagation
+
+```typescript
+import { goSync, go } from 'go-errors';
+
+class ValidationError extends Error {
+    constructor(message: string, public field: string) {
+        super(message);
+        this.name = 'ValidationError';
+    }
+}
+
+function validateInput(input: string): [string | null, ValidationError | null] {
+  let [validated, err] = goSync<string, ValidationError>(() => {
+    if (!input) {
+      throw new ValidationError('Input cannot be empty', 'input');
+    }
+    if (input.length < 3) {
+      throw new ValidationError('Input must be at least 3 characters long', 'input');
+    }
+    return input.trim();
+  });
+  if (err) return [null, err] as const; // Propagate the error
+  return [validated, null] as const;
+}
+
+async function processData(input: string) {
+  let [validatedInput, validationErr] = validateInput(input);
+  if (validationErr) return [null, validationErr] as const; // Propagate
+
+  let [data, fetchErr] = await go(fetch(`/api/data?input=${validatedInput}`));
+  if (fetchErr) return [null, fetchErr] as const; // Propagate
+
+  return [data, null] as const;
+}
+
+async function main() {
+    let [finalResult, finalError] = await processData("");
+    if(finalError) {
+        if(finalError instanceof ValidationError) {
+            console.error("Validation Error:", finalError.message, "Field:", finalError.field);
+        } else {
+            console.error("An unexpected error occurred:", finalError);
+        }
+    } else {
+        console.log("Processing successful:", finalResult);
+    }
+}
+
+main();
+```
+
+## Best Practices
+
+*   **Always Use `let`:** Use `let` for `Result` tuple declarations.
+*   **Check Errors First:** Always check for errors (`if (err)`) before using the potential value.
+*   **Explicit Type Parameters:** Specify type parameters (`<T, E>`) when using `goSync`, `go`, and `goFetch` for better type safety and clarity.
+*   **`as const` Assertions:** Use `as const` when returning `Result` tuples to ensure the correct tuple type is inferred.
+*   **Custom Error Types:** Define and use custom error types for better error handling and context.  Use `instanceof` to check for specific error types.
+* **Use `goFetch` for HTTP Requests:** Prefer `goFetch` over wrapping `fetch` directly with `go`.
+
+## See Also
+
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+- **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):** Create and use your own error types.
+- **[Making HTTP Requests with goFetch](/docs/usage-guides/making-http-requests-with-go-fetch):**  Learn more about using `goFetch`.
+- **[API Reference](/docs/api-reference):** Detailed API documentation.

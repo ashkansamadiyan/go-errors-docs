@@ -1,0 +1,35 @@
+---
+title: Introduction to Go-style Errors
+description: Overview of Go's error handling philosophy and how go-errors brings it to TypeScript/JavaScript.
+---
+
+# Introduction to Go-style Errors
+
+This library, `go-errors`, brings Go's error handling approach to TypeScript and JavaScript.  Go's error handling is known for its explicitness and simplicity, avoiding the complexities of `try-catch` blocks in favor of returning errors as values.  This page introduces the core philosophy and how `go-errors` implements it.
+
+## Go's Error Handling Philosophy
+
+In Go, functions that can encounter errors typically return multiple values: the result and an error.  If the operation is successful, the error is `nil`; otherwise, the error contains information about what went wrong.  This approach has several key characteristics:
+
+*   **Explicitness:** Errors are always explicitly returned and must be handled by the caller.  There's no hidden error propagation like with exceptions.
+*   **Simplicity:**  Error handling is done using simple `if` statements, making the code flow easy to follow.
+*   **Values as Errors:** Errors are treated as regular values, allowing them to be passed around, inspected, and transformed easily.
+
+## `go-errors`: Bringing Go-style Errors to TypeScript
+
+`go-errors` provides a type-safe and elegant way to implement this error-handling pattern in TypeScript and JavaScript.  It introduces the `Result` type and a set of core functions (`goSync`, `go`, `goFetch`) that encapsulate operations and return `Result` tuples.
+
+## Key Advantages of Using `go-errors`
+
+*   **Type Safety:**  Full TypeScript support ensures that you're handling errors correctly and that your code is robust.
+*   **No `try-catch` Blocks:**  Avoid the nested structures and potential performance overhead of `try-catch`.
+*   **Unified API:**  A consistent API for handling both synchronous and asynchronous operations.
+*   **Enhanced Fetch:**  `goFetch` provides built-in response and error transformation capabilities, simplifying API interactions.
+*   **Predictable Error Handling:**  Makes error handling explicit and predictable, leading to more maintainable code.
+
+## Next Steps
+
+- **[The Result Type](/docs/fundamentals/the-result-type):** Learn about the core `Result` type.
+- **[Core Functions Overview](/docs/fundamentals/core-functions-overview):** Get an overview of `goSync`, `go`, and `goFetch`.
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Dive deeper into error handling concepts.
+- **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):** Learn how to define and use your own error types.

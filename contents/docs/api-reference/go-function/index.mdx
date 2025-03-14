@@ -1,0 +1,155 @@
+---
+title: go Function
+description: Detailed documentation for the go function in go-errors.
+---
+
+# `go` Function
+
+The `go` function is designed for handling asynchronous operations (Promises) that might reject, providing a Go-style error handling approach in TypeScript and JavaScript.
+
+## Type Signature
+
+```typescript
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+```
+
+**Type Parameters:**
+
+*   `T`: The type of the successful value (the type that the Promise resolves to).
+*   `E`: The type of the error.  Defaults to `Error` if not specified.
+
+**Parameters:**
+
+*   `promise`:  A `Promise<T>` that might resolve to a value of type `T` or reject with an error.
+
+**Returns:**
+
+*   `Promise<Result<T, E>>`: A Promise that *always* resolves to a `Result<T, E>` tuple.  This tuple will be:
+    *   `[value, null]` if the input `promise` resolves successfully.
+    *   `[null, error]` if the input `promise` rejects.
+
+## Basic Usage
+
+```typescript
+import { go } from 'go-errors';
+
+async function fetchData(): Promise<string> {
+  const response = await fetch('/api/data');
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`);
+  }
+  return response.text();
+}
+
+async function main() {
+  let [data, err] = await go(fetchData());
+
+  if (err) {
+    console.error("Data fetching failed:", err.message);
+  } else {
+    console.log("Fetched data:", data);
+  }
+}
+
+main();
+```
+
+**Explanation:**
+
+1.  `fetchData()` is an asynchronous function that fetches data from an API. It might resolve with the data or reject with an error.
+2.  `go(fetchData())` wraps the `fetchData()` Promise.  The `go` function *never* rejects.  Instead, it always resolves to a `Result` tuple.
+3.  `let [data, err] = await go(fetchData());`  This line uses destructuring to get the `data` and `err` values from the `Result` tuple.
+    *   If `fetchData()` resolves successfully, `data` will contain the fetched data, and `err` will be `null`.
+    *   If `fetchData()` rejects, `data` will be `null`, and `err` will contain the error.
+4.  The `if (err)` block checks for errors and handles them appropriately.
+
+## Custom Error Types
+
+You can use custom error types with `go` to improve type safety and provide more context about errors.
+
+```typescript
+import { go } from 'go-errors';
+
+class ApiError extends Error {
+    constructor(message: string, public status: number) {
+        super(message);
+        this.name = 'ApiError';
+    }
+}
+
+async function fetchData(): Promise<string> {
+    const response = await fetch('/api/data');
+    if (!response.ok) {
+        throw new ApiError(`HTTP error! status: ${response.status}`, response.status);
+    }
+    return response.text();
+}
+
+async function main() {
+    let [data, err] = await go<string, ApiError>(fetchData()); // Specify the error type
+
+    if (err) {
+        if (err instanceof ApiError) {
+            console.error("API Error:", err.message, "Status:", err.status);
+        } else {
+            console.error("Unexpected Error:", err); // This should ideally not happen
+        }
+    } else {
+        console.log("Fetched data:", data);
+    }
+}
+main();
+```
+
+**Key Improvements:**
+
+*   **Type Parameter:** We use `go<string, ApiError>` to specify that the successful value will be a `string` and the error will be an `ApiError`.
+*   **`instanceof` Check:**  We use `instanceof ApiError` to check if the error is an instance of our custom error class. This allows us to handle `ApiError`s specifically.
+*   **Error Context:** The `ApiError` class includes a `status` property, providing additional context about the error.
+
+## Error Propagation (Chaining `go` calls)
+
+`go` makes it easy to chain asynchronous operations and propagate errors:
+
+```typescript
+async function processData() {
+  let [data, fetchErr] = await go(fetchData());
+  if (fetchErr) return [null, fetchErr] as const; // Early return on error
+
+  let [processedData, processErr] = await go(process(data));
+  if (processErr) return [null, processErr] as const; // Early return
+
+  return [processedData, null] as const; // Return the final result
+}
+
+async function main() {
+    let [result, err] = await processData();
+    if(err) {
+        console.error("Processing failed:", err);
+    } else {
+        console.log("Processing successful:", result);
+    }
+}
+```
+
+**Key Points:**
+
+*   **Early Returns:** Use `if (err) return [null, err] as const;` to immediately return from a function if an error occurs. This avoids nested `if-else` blocks and makes the code cleaner.
+*   **`as const`:**  The `as const` assertion is crucial here. It tells TypeScript that the returned tuple is `readonly` and has the exact types `[null, Error]` or `[T, null]`, rather than the more general `(T | null)[]`.  This ensures type safety when destructuring the result.
+
+## Best Practices
+
+*   **Always Use `let`:** Use `let` for `Result` tuple declarations.
+*   **Explicit Type Parameters:** Specify type parameters (`<T, E>`) for better type safety.
+*   **Early Returns:** Use early returns to handle errors as soon as they occur.
+*   **`as const`:** Use `as const` when returning `Result` tuples.
+*   **Custom Error Types:** Define and use custom error types for better error handling and context.
+*   **Consider `goFetch`:** For HTTP requests, prefer using `goFetch` over wrapping `fetch` directly with `go`. `goFetch` provides built-in error transformation and a more streamlined API.
+
+## See Also
+
+*   **[goSync Function](/docs/api-reference/go-sync-function):**  For synchronous operations.
+*   **[goFetch Function](/docs/api-reference/go-fetch-function):**  For HTTP requests.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Detailed explanation of the `Result` type.
+*   **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+*   **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.

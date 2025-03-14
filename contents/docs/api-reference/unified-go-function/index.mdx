@@ -1,0 +1,162 @@
+---
+title: unifiedGo Function
+description: Using the unified go function for both synchronous and asynchronous operations.
+---
+
+# `unifiedGo` Function
+
+The `unifiedGo` function (simply exported as `go` in `go-errors`) provides a single interface for handling *both* synchronous and asynchronous operations with Go-style error handling.  While specialized functions (`goSync` and `goFetch`) are generally preferred for clarity and specific features, `unifiedGo` offers flexibility when the operation type (sync or async) might not be known at compile time or when you want a single function to handle both.
+
+## Type Signature
+
+```typescript
+function go<T, E = Error>(fn: () => T): Result<T, E>;
+function go<T, E = Error>(promise: Promise<T>): Promise<Result<T, E>>;
+```
+
+**Type Parameters:**
+
+*   `T`: The type of the successful value.
+*   `E`: The type of the error. Defaults to `Error`.
+
+**Parameters:**
+
+*   `fn`:  A *synchronous* function that might throw an error.
+*   `promise`: A `Promise` that might resolve to a value of type `T` or reject with an error.
+
+**Returns:**
+
+*   If a synchronous function (`fn`) is provided: `Result<T, E>` (a tuple).
+*   If a `Promise` is provided: `Promise<Result<T, E>>` (a Promise that resolves to a tuple).
+
+## Synchronous Usage (`go` acting like `goSync`)
+
+```typescript
+import { go } from 'go-errors';
+
+let [result, err] = go(() => {
+  if (Math.random() > 0.5) {
+    throw new Error("Something went wrong!");
+  }
+  return 42;
+});
+
+if (err) {
+  console.error("Error:", err.message);
+} else {
+  console.log("Result:", result);
+}
+```
+
+## Asynchronous Usage (`go` acting like `goAsync`)
+
+```typescript
+import { go } from 'go-errors';
+
+async function fetchData(): Promise<string> {
+    const response = await fetch('/api/data');
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.text();
+}
+
+async function main() {
+    let [data, err] = await go(fetchData());
+
+    if (err) {
+        console.error("Fetch failed:", err.message);
+    } else {
+        console.log("Data:", data);
+    }
+}
+main();
+```
+
+## Type Inference
+
+`go` intelligently infers the return type based on the input:
+
+```typescript
+import { go } from 'go-errors';
+
+// Synchronous
+let [syncResult, syncErr] = go(() => 42);
+// syncResult: number | null
+// syncErr: Error | null
+
+// Asynchronous
+async function example() {
+    let [asyncResult, asyncErr] = await go(Promise.resolve("hello"));
+    // asyncResult: string | null
+    // asyncErr: Error | null
+}
+```
+
+You can also explicitly specify the types:
+
+```typescript
+import { go } from 'go-errors';
+
+class MyCustomError extends Error {}
+
+let [syncResult, syncErr] = go<number, MyCustomError>(() => {
+  if (someCondition) {
+    throw new MyCustomError("Something went wrong");
+  }
+  return 42;
+});
+
+async function example() {
+    let [asyncResult, asyncErr] = await go<string, MyCustomError>(async () => {
+        // ...
+        return "hello";
+    });
+}
+```
+
+## When to Use `unifiedGo` (and When Not To)
+
+**Use `unifiedGo` when:**
+
+*   **You have a function that might accept *either* a synchronous function or a Promise:** This is the primary use case for `unifiedGo`.  If you're writing a utility function that needs to handle both synchronous and asynchronous operations in a uniform way, `unifiedGo` is ideal.
+*   **The operation type (sync/async) is determined at runtime:** If you have a variable that might be a synchronous function or a Promise based on some condition, `unifiedGo` can handle both cases without needing separate code paths.
+
+**Prefer `goSync` and `goFetch` when:**
+
+*   **You know the operation is synchronous:** Use `goSync` for better readability and slightly better performance (avoiding the `async`/`await` overhead).
+*   **You're making HTTP requests:** Use `goFetch`. It provides built-in features for handling HTTP responses and errors, including response and error transformation.  Using `unifiedGo` with `fetch` directly is discouraged.
+* **Clarity:** Using the specific functions makes it immediately clear whether a given piece of code is synchronous or asynchronous.
+
+**Example of a good use case for `unifiedGo`:**
+
+```typescript
+function processValue<T, E = Error>(
+  input: T | Promise<T>,
+  processor: (value: T) => T | Promise<T>
+): Promise<Result<T, E>> {
+  // Handle both sync and async inputs
+  let [initialValue, initialError] = go(input);
+  if (initialError) {
+    return Promise.resolve([null, initialError] as const);
+  }
+
+  // Handle both sync and async processors
+  return go(processor(initialValue!));
+}
+```
+
+## Best Practices
+
+*   **Type Parameters:**  Use explicit type parameters (`<T, E>`) when the types cannot be inferred automatically or for improved clarity.
+*   **`as const`:** Use `as const` when returning `Result` tuples.
+*   **Custom Error Types:** Define and use custom error types for better error handling.
+*   **Prefer Specialized Functions:** Use `goSync` and `goFetch` when the operation type is known and fixed.  Use `unifiedGo` primarily for flexibility when dealing with potentially mixed synchronous/asynchronous inputs.
+
+## See Also
+
+*   **[goSync Function](/docs/api-reference/go-sync-function):**  For synchronous operations.
+*   **[goFetch Function](/docs/api-reference/go-fetch-function):**  For HTTP requests.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Detailed explanation of the `Result` type.
+*   **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+*   **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.

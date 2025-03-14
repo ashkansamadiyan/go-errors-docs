@@ -1,0 +1,275 @@
+---
+title: Making HTTP Requests with goFetch
+description: A comprehensive guide to using goFetch for type-safe HTTP requests with Go-style error handling.
+---
+
+# Making HTTP Requests with `goFetch`
+
+This guide provides a comprehensive overview of using the `goFetch` function from the `go-errors` library for making HTTP requests. `goFetch` is a wrapper around the native `fetch` API, designed to simplify common tasks and integrate seamlessly with Go-style error handling.
+
+## Basic GET Request
+
+```typescript
+import { goFetch } from 'go-errors';
+
+async function main() {
+  let [data, err] = await goFetch('/api/data'); // Simple GET request
+
+  if (err) {
+    console.error("Fetch failed:", err);
+  } else {
+    console.log("Data:", data); // data is of type 'unknown'
+  }
+}
+main();
+```
+
+## Type-Safe GET Request with Response Transformation
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+}
+
+async function getUser() {
+  let [user, err] = await goFetch<User>('/api/users/123', {
+    responseTransformer: (data: any) => {
+      // Validate and transform the response data
+      if (typeof data !== 'object' || data === null || !data.id || !data.name || !data.email) {
+        throw new Error('Invalid user data received');
+      }
+      return { id: data.id, name: data.name, email: data.email };
+    },
+  });
+
+  if (err) {
+    console.error('Failed to fetch user:', err);
+  } else {
+    console.log('Fetched user:', user);
+  }
+}
+getUser();
+```
+
+## POST Request
+
+```typescript
+import { goFetch } from 'go-errors';
+
+interface User {
+    id: number;
+    name: string;
+    email: string;
+}
+
+async function createUser() {
+    let [user, err] = await goFetch<User>('/api/users', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ name: 'John Doe', email: 'john.doe@example.com' }),
+        responseTransformer: (data: any) => data as User, // Simple transformation
+    });
+
+    if (err) {
+        console.error("Failed to create user:", err);
+    } else {
+        console.log("Created user:", user);
+    }
+}
+
+createUser();
+```
+
+## Handling Errors with `errorTransformer`
+```typescript
+import { goFetch } from 'go-errors';
+
+class ApiError extends Error {
+    constructor(message: string, public status: number, public code?: string) {
+        super(message);
+        this.name = 'ApiError';
+    }
+}
+
+async function getData() {
+  let [data, err] = await goFetch<MyDataType, ApiError>('/api/data', {
+    errorTransformer: (error) => {
+      if (error instanceof Response) {
+        // Handle HTTP errors
+        return new ApiError(`HTTP Error: ${error.status}`, error.status);
+      }
+      if (error instanceof Error) {
+        // Handle other errors (e.g., network errors, errors from responseTransformer)
+        return new ApiError(error.message, 500); // Default to 500 for other errors
+      }
+      // Handle unexpected error types
+      return new ApiError("An unknown error occurred", 500);
+    },
+  });
+
+  if (err) {
+    if (err instanceof ApiError) {
+      console.error("API Error:", err.message, "Status:", err.status);
+    } else {
+      console.error("Unexpected Error:", err); // This should ideally not happen
+    }
+  } else {
+    console.log("Data:", data);
+  }
+}
+```
+
+## Advanced Usage
+
+### Authentication
+
+```typescript
+// Using a Bearer token:
+let [data, err] = await goFetch('/api/protected-resource', {
+    headers: {
+        'Authorization': `Bearer ${yourToken}`
+    }
+});
+
+// Using Basic Auth (less common, but supported):
+let [data, err] = await goFetch('/api/protected-resource', {
+    headers: {
+        'Authorization': `Basic ${btoa(username + ':' + password)}`
+    }
+});
+```
+
+### Custom Headers
+
+```typescript
+let [data, err] = await goFetch('/api/data', {
+    headers: {
+        'X-Custom-Header': 'MyValue',
+        'Content-Type': 'application/json' // Important for POST/PUT requests with JSON bodies
+    }
+});
+```
+
+### Request Body (POST, PUT, PATCH)
+
+```typescript
+let [createdResource, err] = await goFetch('/api/resource', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key1: 'value1', key2: 'value2' })
+});
+
+let [updatedResource, err] = await goFetch('/api/resource/123', {
+    method: 'PUT', // or 'PATCH'
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key1: 'updatedValue' })
+});
+```
+### Handling Different Response Types (not just JSON)
+```typescript
+// Text response
+let [text, err] = await goFetch<string>('/api/text', {
+    responseTransformer: async (res) => {
+        if (res instanceof Response) { // Check if it's a raw Response
+            return await res.text();
+        }
+        throw new Error("Unexpected response type");
+    }
+});
+
+// Blob response (e.g., for images, files)
+let [blob, err] = await goFetch<Blob>('/api/image', {
+    responseTransformer: async (res) => {
+        if (res instanceof Response) {
+            return await res.blob();
+        }
+        throw new Error("Unexpected response type");
+    }
+});
+```
+
+### Timeouts
+```typescript
+
+async function fetchWithTimeout<T, E = Error>(
+  input: RequestInfo | URL,
+  init?: GoFetchOptions<T, E> & { timeout?: number }
+): Promise<Result<T, E>> {
+  const { timeout = 8000, ...options } = init || {}; // Default timeout of 8 seconds
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const [data, err] = await goFetch<T, E>(input, {
+      ...options,
+      signal: controller.signal, // Pass the AbortSignal to goFetch
+    });
+    clearTimeout(timeoutId);
+    return [data, err];
+  } catch (error) {
+    clearTimeout(timeoutId);
+     if (error instanceof Error && error.name === 'AbortError') {
+        // Handle timeout error specifically
+        if (options?.errorTransformer) {
+            return [null, options.errorTransformer(new Error('Request timed out'))] as const;
+        } else {
+            return [null, new Error('Request timed out')] as const
+        }
+      }
+      // Handle other errors using errorTransformer if available
+      if(options?.errorTransformer){
+        return [null, options.errorTransformer(error)] as const
+      }
+      return [null, error] as const;
+  }
+}
+
+// Example usage with timeout
+async function exampleTimeout() {
+    let [data, err] = await fetchWithTimeout('/api/slow-endpoint', { timeout: 5000 }); // 5-second timeout
+
+    if (err) {
+        if (err.message === 'Request timed out') {
+            console.error('The request timed out!');
+        } else {
+            console.error('An error occurred:', err);
+        }
+    } else {
+        console.log('Data:', data);
+    }
+}
+```
+
+### Retries
+```typescript
+async function fetchWithRetry<T, E = Error>(
+  url: string,
+  options?: GoFetchOptions<T, E>,
+  retries = 3
+): Promise<Result<T, E>> {
+    let lastError: E | null = null;
+    for(let i = 0; i < retries; i++){
+        let [data, err] = await goFetch<T,E>(url, options);
+        if(!err) return [data, null] as const;
+
+        lastError = err;
+        await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // simple backoff
+    }
+    return [null, lastError] as const;
+}
+```
+
+## See Also
+
+*   **[goFetch Function](/docs/api-reference/go-fetch-function):**  API reference.
+*   **[The Result Type](/docs/fundamentals/the-result-type):**  Understand the `Result` type.
+*   **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Error handling guide.
+*   **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):** Custom error types.
+*   **[Basic Usage Patterns](/docs/usage-guides/basic-usage-patterns):** More usage examples.

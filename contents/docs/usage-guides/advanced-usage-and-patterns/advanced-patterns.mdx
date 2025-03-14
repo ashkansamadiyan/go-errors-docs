@@ -1,0 +1,235 @@
+---
+title: Advanced Patterns
+description: Explore advanced usage patterns for go-errors, including retry logic and API client design.
+---
+
+# Advanced Patterns
+
+This page covers advanced usage patterns for the `go-errors` library, demonstrating how to handle complex scenarios and build robust applications.
+
+## Retry Logic with Backoff
+
+Implementing retry logic is crucial for handling transient network errors or temporary API unavailability.  This example shows a `fetchWithRetry` function that uses exponential backoff:
+
+```typescript
+async function fetchWithRetry<T, E = Error>(
+  url: string,
+  options?: Parameters<typeof goFetch>[1],
+  retries = 3,
+  delay = 1000
+): Promise<Result<T, E>> {
+  let lastError: E | null = null;
+
+  for (let i = 0; i < retries; i++) {
+    let [data, err] = await goFetch<T, E>(url, options);
+    if (!err) return [data, null] as const;
+
+    lastError = err;
+    if (i < retries - 1) {
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1))); // simple backoff
+    }
+  }
+
+  return [null, lastError] as const;
+}
+
+// Usage
+let [data, err] = await fetchWithRetry<User>(
+  '/api/user/1',
+  {
+    responseTransformer: (data) => ({
+      ...data,
+      fullName: `${data.firstName} ${data.lastName}`
+    })
+  },
+);
+
+if(err) {
+    console.error("Failed to fetch user after multiple retries:", err);
+}
+```
+**Explanation:**
+* The function takes a URL, options (same as goFetch), number of retries, and initial delay.
+* It uses a loop to retry the `goFetch` operation up to `retries` times.
+* If `goFetch` is successful (no error), the function immediately returns the data.
+* If `goFetch` fails, the error is stored, and the function waits for a progressively increasing delay before retrying.
+* If all retries fail, the function returns the last error.
+
+## Parallel Operations with Error Aggregation
+
+```typescript
+async function fetchUserProfile(userId: string) {
+  // Fetch user data and posts in parallel
+  const [userPromise, postsPromise] = await Promise.all([
+    goFetch<User>(`/api/user/${userId}`, {
+      responseTransformer: (data) => ({
+        ...data,
+        fullName: `${data.firstName} ${data.lastName}`
+      })
+    }),
+    goFetch<Post[]>(`/api/user/${userId}/posts`)
+  ]);
+
+  let [user, userErr] = userPromise;
+  let [posts, postsErr] = postsPromise;
+
+  if (userErr || postsErr) {
+      const errors: Error[] = [];
+      if(userErr) errors.push(userErr);
+      if(postsErr) errors.push(postsErr);
+    return [null, new AggregateError(errors)] as const; // Using the AggregateError from the previous example
+  }
+
+  return [{
+    user,
+    posts
+  }, null] as const;
+}
+```
+
+## API Client Pattern
+
+Creating an API client class can help encapsulate your API interaction logic and make your code more organized and maintainable.
+
+```typescript
+class ApiClient {
+  constructor(private baseUrl: string, private token?: string) {}
+
+  private async request<T, E = Error>( // Using a generic 'Error' type here.  You could use a custom ApiError.
+    endpoint: string,
+    options?: Parameters<typeof goFetch>[1]
+  ): Promise<Result<T, E>> {
+    const fullUrl = `${this.baseUrl}${endpoint}`;
+
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        ...options?.headers, // Allow overriding headers
+    };
+
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+
+    return goFetch<T, E>(fullUrl, { ...options, headers });
+  }
+
+  async getUser(id: string): Promise<Result<User, Error>> {
+    return this.request<User>(`/users/${id}`);
+  }
+
+  async createUser(data: CreateUserRequest): Promise<Result<User, Error>> {
+    return this.request<User, Error>('/users', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+    async updateUser(id: string, data: UpdateUserRequest): Promise<Result<User, Error>> {
+        return this.request<User, Error>(`/users/${id}`, {
+            method: 'PATCH', // or 'PUT'
+            body: JSON.stringify(data)
+        });
+    }
+
+    async deleteUser(id: string): Promise<Result<null, Error>> {
+        return this.request<null, Error>(`/users/${id}`, {
+            method: 'DELETE'
+        });
+    }
+}
+
+// Usage
+const api = new ApiClient('https://api.example.com'); // No token needed for this example
+let [user, err] = await api.getUser('123');
+
+if(err) {
+    console.error("Failed to get user:", err);
+} else {
+    console.log("User:", user);
+}
+```
+
+**Key improvements in this API Client:**
+
+*   **Base URL:**  The `baseUrl` is handled in the constructor, making it easy to configure.
+*   **Authentication (Optional):**  The example shows how to include an optional `token` for authentication (e.g., a Bearer token).
+*   **Type Safety:**  Uses generics (`<T, E>`) for type safety with `goFetch`.
+*   **`request` Method:**  A private `request` method handles the common logic for all API calls (URL construction, headers, calling `goFetch`).
+*   **Specific Methods:**  Methods like `getUser`, `createUser`, `updateUser`, and `deleteUser` provide a clean interface for interacting with the API.
+*   **Error Handling:** Uses the `Result` type for consistent error handling.
+
+## Advanced Type Patterns
+### Discriminated Unions
+```typescript
+type Result<T> =
+  | { type: 'success'; data: T }
+  | { type: 'validation'; errors: ValidationError[] }
+  | { type: 'notFound'; resource: string }
+  | { type: 'auth'; message: string }
+  | { type: 'error'; error: Error };
+
+function handleResult<T>(result: Result<T>) {
+  switch (result.type) {
+    case 'success':
+      return processSuccess(result.data);
+    case 'validation':
+      return handleValidationErrors(result.errors);
+    case 'notFound':
+      return handleNotFound(result.resource);
+    case 'auth':
+      return handleAuthError(result.message);
+    case 'error':
+      return handleError(result.error);
+  }
+}
+
+// Usage
+function processUser(userData: unknown): Result<User> {
+  let [validated, err] = goSync(() => validateUser(userData));
+  if (err) {
+    if (err instanceof ValidationError) {
+      return { type: 'validation', errors: [err] };
+    }
+    return { type: 'error', error: err };
+  }
+
+  return { type: 'success', data: validated };
+}
+```
+### Generic Constraints
+```typescript
+interface HasId {
+  id: string | number;
+}
+
+interface HasTimestamps {
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+class Repository<T extends HasId & HasTimestamps> {
+  async findById(id: T['id']): Promise<Result<T, Error>> {
+    let [item, err] = await goFetch<T>(`/api/items/${id}`);
+    if (err) return [null, err] as const;
+
+    let [processed, err] = goSync(() => {
+      // We can safely access id, createdAt, and updatedAt
+      // because of the constraints
+      return {
+        ...item,
+        createdAt: new Date(item.createdAt),
+        updatedAt: new Date(item.updatedAt),
+      } as T;
+    });
+
+    return [processed, err] as const;
+  }
+}
+```
+
+## See Also
+
+- **[Advanced Features](/docs/usage-guides/advanced-usage-and-patterns/advanced-features):** Learn about features like custom error types and interceptors.
+- **[goFetch Function](/docs/api-reference/go-fetch-function):**  `goFetch` API reference.
+- **[Error Handling in go-errors](/docs/fundamentals/error-handling-in-go-errors):** Comprehensive guide to error handling.
+- **[Working with Custom Error Types](/docs/fundamentals/working-with-custom-error-types):**  Defining and using custom error types.
