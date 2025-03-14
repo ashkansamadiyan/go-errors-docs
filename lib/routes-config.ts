@@ -16,6 +16,7 @@ export const ROUTES: EachRoute[] = [
     items: [
       { title: "Introduction", href: "/getting-started/introduction" },
       { title: "Installation", href: "/getting-started/installation" },
+      { title: "Quick Start Guide", href: "/getting-started/quick-start-guide" }
     ],
   },
   {
@@ -81,18 +82,18 @@ export const ROUTES: EachRoute[] = [
   },
 ];
 
-type Page = { title: string; href: string };
+type Page = { title: string; href: string; };
 
-function getRecurrsiveAllLinks(node: EachRoute) {
-  const ans: Page[] = [];
-  if (!node.noLink) {
-    ans.push({ title: node.title, href: node.href });
-  }
-  node.items?.forEach((subNode) => {
-    const temp = { ...subNode, href: `${node.href}${subNode.href}` };
-    ans.push(...getRecurrsiveAllLinks(temp));
-  });
-  return ans;
+function getRecurrsiveAllLinks(node: EachRoute){
+    const ans: Page[] = []
+    if(!node.noLink){
+        ans.push({title: node.title, href: node.href})
+    }
+    node.items?.forEach(subNode => {
+        const temp = {...subNode, href: `${node.href}${subNode.href}`}
+        ans.push(...getRecurrsiveAllLinks(temp))
+    })
+    return ans
 }
 
-export const page_routes = ROUTES.map((it) => getRecurrsiveAllLinks(it)).flat();
+export const page_routes = ROUTES.map((it) => getRecurrsiveAllLinks(it)).flat()
